@@ -9,7 +9,7 @@ import {
   ErrorCodes, createError, validate, schemas, 
   canTransitionJobStatus 
 } from './validation.js';
-import { authMiddleware, setupAuthRoutes } from './auth.js';
+import { authMiddleware, setupPublicAuthRoutes, setupProtectedAuthRoutes } from './auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -31,11 +31,14 @@ app.use((req, res, next) => {
   next();
 });
 
-// Setup auth routes FIRST (login, logout, me, users) - before middleware
-setupAuthRoutes(app);
+// Setup PUBLIC auth routes FIRST (login only) - before middleware
+setupPublicAuthRoutes(app);
 
 // Authentication middleware (applied to all /api routes except login and health)
 app.use('/api', authMiddleware);
+
+// Setup PROTECTED auth routes (me, password, users) - after middleware
+setupProtectedAuthRoutes(app);
 
 // ============================================
 // AUDIT LOGGING

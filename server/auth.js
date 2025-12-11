@@ -107,7 +107,8 @@ export function verifyPassword(password, hash) {
 // AUTH ROUTES (to be used in index.js)
 // ============================================
 
-export function setupAuthRoutes(app) {
+// Public auth routes (no authentication required)
+export function setupPublicAuthRoutes(app) {
   // Login
   app.post('/api/auth/login', (req, res) => {
     try {
@@ -161,7 +162,10 @@ export function setupAuthRoutes(app) {
       res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
     }
   });
-  
+}
+
+// Protected auth routes (authentication required)
+export function setupProtectedAuthRoutes(app) {
   // Get current user
   app.get('/api/auth/me', (req, res) => {
     if (!req.user) {
