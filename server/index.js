@@ -1,13 +1,54 @@
 import express from 'express';
 import cors from 'cors';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import db from './database.js';
+import { 
+  ErrorCodes, createError, validate, schemas, 
+  canTransitionJobStatus 
+} from './validation.js';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Request logging middleware
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    if (req.path.startsWith('/api')) {
+      console.log(`${req.method} ${req.path} - ${res.statusCode} (${duration}ms)`);
+    }
+  });
+  next();
+});
+
+// ============================================
+// AUDIT LOGGING
+// ============================================
+
+function auditLog(tableName, recordId, action, oldData = null, newData = null) {
+  try {
+    db.prepare(`
+      INSERT INTO audit_log (table_name, record_id, action, old_data, new_data)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(
+      tableName, 
+      recordId, 
+      action, 
+      oldData ? JSON.stringify(oldData) : null,
+      newData ? JSON.stringify(newData) : null
+    );
+  } catch (error) {
+    console.error('Audit log error:', error.message);
+  }
+}
 
 // ============================================
 // UTILITY FUNCTIONS
@@ -995,6 +1036,275 @@ app.get('/api/reports/summary', (req, res) => {
 });
 
 // ============================================
+// SYSTEM & HEALTH ROUTES
+// ============================================
+
+app.get('/api/health', (req, res) => {
+  try {
+    // Check database connection
+    const dbCheck = db.prepare('SELECT 1 as ok').get();
+    const stats = {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      database: dbCheck?.ok === 1 ? 'connected' : 'error',
+      memory: process.memoryUsage(),
+      version: '1.0.0'
+    };
+    res.json(stats);
+  } catch (error) {
+    res.status(503).json({ 
+      status: 'unhealthy', 
+      error: error.message 
+    });
+  }
+});
+
+app.post('/api/backup', (req, res) => {
+  try {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const backupDir = path.join(__dirname, 'backups');
+    const backupPath = path.join(backupDir, `knight-auto-backup-${timestamp}.db`);
+    
+    // Create backups directory if it doesn't exist
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+    }
+    
+    // Use SQLite backup API
+    db.backup(backupPath);
+    
+    res.json({ 
+      success: true, 
+      message: 'Backup created successfully',
+      path: backupPath,
+      timestamp 
+    });
+  } catch (error) {
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, 'Backup failed', error.message));
+  }
+});
+
+// ============================================
+// OVERDUE INVOICES
+// ============================================
+
+app.get('/api/invoices/overdue', (req, res) => {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const overdueInvoices = db.prepare(`
+      SELECT i.*, c.name as customer_name, c.phone as customer_phone, c.email as customer_email,
+             julianday('now') - julianday(i.due_date) as days_overdue
+      FROM invoices i
+      JOIN customers c ON i.customer_id = c.id
+      WHERE i.status != 'paid' AND i.due_date < ?
+      ORDER BY i.due_date ASC
+    `).all(today);
+    
+    res.json(overdueInvoices);
+  } catch (error) {
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
+  }
+});
+
+// ============================================
+// SERVICE REMINDERS
+// ============================================
+
+app.get('/api/service-reminders', (req, res) => {
+  try {
+    const { status, vehicle_id } = req.query;
+    let query = `
+      SELECT sr.*, v.plate_number, v.make, v.model, v.odometer as current_odometer,
+             c.name as customer_name, c.phone as customer_phone
+      FROM service_reminders sr
+      JOIN vehicles v ON sr.vehicle_id = v.id
+      JOIN customers c ON v.customer_id = c.id
+    `;
+    const conditions = [];
+    const params = [];
+    
+    if (status) {
+      conditions.push('sr.status = ?');
+      params.push(status);
+    }
+    if (vehicle_id) {
+      conditions.push('sr.vehicle_id = ?');
+      params.push(vehicle_id);
+    }
+    
+    if (conditions.length) query += ' WHERE ' + conditions.join(' AND ');
+    query += ' ORDER BY sr.due_date ASC, sr.due_mileage ASC';
+    
+    res.json(db.prepare(query).all(...params));
+  } catch (error) {
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
+  }
+});
+
+app.get('/api/service-reminders/due', (req, res) => {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const dueReminders = db.prepare(`
+      SELECT sr.*, v.plate_number, v.make, v.model, v.odometer as current_odometer,
+             c.name as customer_name, c.phone as customer_phone
+      FROM service_reminders sr
+      JOIN vehicles v ON sr.vehicle_id = v.id
+      JOIN customers c ON v.customer_id = c.id
+      WHERE sr.status = 'pending' 
+        AND (sr.due_date <= ? OR v.odometer >= sr.due_mileage)
+      ORDER BY sr.due_date ASC
+    `).all(today);
+    
+    res.json(dueReminders);
+  } catch (error) {
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
+  }
+});
+
+app.post('/api/service-reminders', (req, res) => {
+  try {
+    const errors = validate(req.body, schemas.serviceReminder);
+    if (errors) {
+      return res.status(400).json(createError(ErrorCodes.VALIDATION_ERROR, 'Validation failed', errors));
+    }
+    
+    const { vehicle_id, reminder_type, due_mileage, due_date, description } = req.body;
+    
+    // Check vehicle exists
+    const vehicle = db.prepare('SELECT id FROM vehicles WHERE id = ?').get(vehicle_id);
+    if (!vehicle) {
+      return res.status(404).json(createError(ErrorCodes.NOT_FOUND, 'Vehicle not found'));
+    }
+    
+    const result = db.prepare(`
+      INSERT INTO service_reminders (vehicle_id, reminder_type, due_mileage, due_date, description)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(vehicle_id, reminder_type, due_mileage, due_date, description);
+    
+    auditLog('service_reminders', result.lastInsertRowid, 'create', null, req.body);
+    res.json({ id: result.lastInsertRowid, ...req.body });
+  } catch (error) {
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
+  }
+});
+
+app.put('/api/service-reminders/:id', (req, res) => {
+  try {
+    const { status, notified_at } = req.body;
+    const reminder = db.prepare('SELECT * FROM service_reminders WHERE id = ?').get(req.params.id);
+    if (!reminder) {
+      return res.status(404).json(createError(ErrorCodes.NOT_FOUND, 'Reminder not found'));
+    }
+    
+    db.prepare(`
+      UPDATE service_reminders SET status = ?, notified_at = ? WHERE id = ?
+    `).run(status || reminder.status, notified_at, req.params.id);
+    
+    auditLog('service_reminders', req.params.id, 'update', reminder, req.body);
+    res.json({ id: req.params.id, ...req.body });
+  } catch (error) {
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
+  }
+});
+
+app.delete('/api/service-reminders/:id', (req, res) => {
+  try {
+    const reminder = db.prepare('SELECT * FROM service_reminders WHERE id = ?').get(req.params.id);
+    if (reminder) {
+      db.prepare('DELETE FROM service_reminders WHERE id = ?').run(req.params.id);
+      auditLog('service_reminders', req.params.id, 'delete', reminder, null);
+    }
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
+  }
+});
+
+// ============================================
+// TECHNICIAN PERFORMANCE REPORT
+// ============================================
+
+app.get('/api/reports/technician', (req, res) => {
+  try {
+    const { start_date, end_date } = req.query;
+    const start = start_date || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+    const end = end_date || new Date().toISOString().split('T')[0];
+    
+    const technicianStats = db.prepare(`
+      SELECT 
+        technician,
+        COUNT(*) as total_jobs,
+        SUM(CASE WHEN status = 'completed' OR status = 'invoiced' THEN 1 ELSE 0 END) as completed_jobs,
+        SUM(labor_hours) as total_hours,
+        SUM(labor_cost) as total_labor_revenue,
+        SUM(total_cost) as total_revenue,
+        ROUND(AVG(julianday(completed_at) - julianday(created_at)), 1) as avg_completion_days
+      FROM jobs
+      WHERE technician IS NOT NULL AND technician != ''
+        AND DATE(created_at) BETWEEN ? AND ?
+      GROUP BY technician
+      ORDER BY total_revenue DESC
+    `).all(start, end);
+    
+    res.json({
+      period: { start, end },
+      technicians: technicianStats
+    });
+  } catch (error) {
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
+  }
+});
+
+// ============================================
+// AUDIT LOG (Read-only)
+// ============================================
+
+app.get('/api/audit-log', (req, res) => {
+  try {
+    const { table_name, record_id, limit = 100 } = req.query;
+    let query = 'SELECT * FROM audit_log';
+    const conditions = [];
+    const params = [];
+    
+    if (table_name) {
+      conditions.push('table_name = ?');
+      params.push(table_name);
+    }
+    if (record_id) {
+      conditions.push('record_id = ?');
+      params.push(record_id);
+    }
+    
+    if (conditions.length) query += ' WHERE ' + conditions.join(' AND ');
+    query += ' ORDER BY created_at DESC LIMIT ?';
+    params.push(parseInt(limit));
+    
+    res.json(db.prepare(query).all(...params));
+  } catch (error) {
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
+  }
+});
+
+// ============================================
+// GLOBAL ERROR HANDLER
+// ============================================
+
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json(createError(
+    ErrorCodes.INTERNAL_ERROR, 
+    'An unexpected error occurred',
+    process.env.NODE_ENV === 'development' ? err.message : undefined
+  ));
+});
+
+// 404 handler for unknown routes
+app.use((req, res) => {
+  res.status(404).json(createError(ErrorCodes.NOT_FOUND, `Route ${req.method} ${req.path} not found`));
+});
+
+// ============================================
 // START SERVER
 // ============================================
 
@@ -1003,5 +1313,6 @@ app.listen(PORT, () => {
 🔧 Knight Auto Works Server running!
 📍 http://localhost:${PORT}
 📊 API endpoints ready
+✅ Health check: http://localhost:${PORT}/api/health
   `);
 });

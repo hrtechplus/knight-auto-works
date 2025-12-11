@@ -204,6 +204,39 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_inventory_sku ON inventory(sku);
   CREATE INDEX IF NOT EXISTS idx_invoices_customer ON invoices(customer_id);
   CREATE INDEX IF NOT EXISTS idx_invoices_job ON invoices(job_id);
+
+  -- Audit log table for tracking all changes
+  CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    table_name TEXT NOT NULL,
+    record_id INTEGER NOT NULL,
+    action TEXT NOT NULL,
+    old_data TEXT,
+    new_data TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  -- Service reminders for vehicle maintenance scheduling
+  CREATE TABLE IF NOT EXISTS service_reminders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vehicle_id INTEGER NOT NULL,
+    reminder_type TEXT NOT NULL,
+    due_mileage INTEGER,
+    due_date DATE,
+    description TEXT,
+    status TEXT DEFAULT 'pending',
+    notified_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
+  );
+
+  -- Indexes for new tables
+  CREATE INDEX IF NOT EXISTS idx_audit_table ON audit_log(table_name);
+  CREATE INDEX IF NOT EXISTS idx_audit_record ON audit_log(record_id);
+  CREATE INDEX IF NOT EXISTS idx_reminders_vehicle ON service_reminders(vehicle_id);
+  CREATE INDEX IF NOT EXISTS idx_reminders_status ON service_reminders(status);
+  CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
+  CREATE INDEX IF NOT EXISTS idx_invoices_due_date ON invoices(due_date);
 `);
 
 console.log('✅ Database initialized successfully at:', dbPath);
