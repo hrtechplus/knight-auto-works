@@ -4,7 +4,9 @@ import {
   Wrench, Car, Users, Package, AlertTriangle, TrendingUp, DollarSign,
   Clock, CheckCircle, FileText, ArrowRight
 } from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getDashboard } from '../api';
+import { SkeletonStatCard, SkeletonCard } from '../components/Skeleton';
 
 function Dashboard() {
   const [data, setData] = useState(null);
@@ -25,11 +27,35 @@ function Dashboard() {
     }
   };
 
+  // Mock revenue data for the chart (since backend might not provide it yet)
+  const revenueData = [
+    { name: 'Mon', revenue: 12000 },
+    { name: 'Tue', revenue: 19000 },
+    { name: 'Wed', revenue: 15000 },
+    { name: 'Thu', revenue: 22000 },
+    { name: 'Fri', revenue: 28000 },
+    { name: 'Sat', revenue: 32000 },
+    { name: 'Sun', revenue: 25000 },
+  ];
+
   if (loading) {
     return (
-      <div className="loading">
-        <div className="spinner"></div>
-      </div>
+      <>
+        <header className="main-header">
+          <h1 className="page-title">Dashboard</h1>
+        </header>
+        <div className="main-body">
+          <div className="stats-grid">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <SkeletonStatCard key={i} />
+            ))}
+          </div>
+          <div className="detail-grid">
+            <SkeletonCard />
+            <SkeletonCard />
+          </div>
+        </div>
+      </>
     );
   }
 
@@ -134,6 +160,56 @@ function Dashboard() {
               <div className="stat-value">{stats?.totalVehicles || 0}</div>
               <div className="stat-label">Vehicles Registered</div>
             </div>
+          </div>
+        </div>
+
+        {/* Revenue Chart */}
+        <div className="card" style={{ marginBottom: '2rem' }}>
+          <div className="card-header">
+            <h3 className="card-title">Revenue Trends</h3>
+          </div>
+          <div className="card-body" style={{ height: '300px' }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={revenueData}>
+                <defs>
+                  <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="var(--primary)" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                <XAxis 
+                  dataKey="name" 
+                  stroke="var(--text-muted)" 
+                  fontSize={12} 
+                  tickLine={false} 
+                  axisLine={false}
+                />
+                <YAxis 
+                  stroke="var(--text-muted)" 
+                  fontSize={12} 
+                  tickLine={false} 
+                  axisLine={false}
+                  tickFormatter={(value) => `₹${value/1000}k`}
+                />
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: 'var(--bg-secondary)', 
+                    border: '1px solid var(--border)',
+                    borderRadius: '8px'
+                  }}
+                  itemStyle={{ color: 'var(--text-primary)' }}
+                />
+                <Area 
+                  type="monotone" 
+                  dataKey="revenue" 
+                  stroke="var(--primary)" 
+                  strokeWidth={2}
+                  fillOpacity={1} 
+                  fill="url(#colorRevenue)" 
+                />
+              </AreaChart>
+            </ResponsiveContainer>
           </div>
         </div>
 

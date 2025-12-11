@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Search, X, Wrench, Filter } from 'lucide-react';
 import { getJobs, getVehicles, createJob } from '../api';
+import { useToast, ToastContainer } from '../components/Toast';
+import { SkeletonTable } from '../components/Skeleton';
 
 function Jobs() {
   const [jobs, setJobs] = useState([]);
@@ -14,11 +16,16 @@ function Jobs() {
     vehicle_id: '', description: '', priority: 'normal', technician: '', odometer_in: ''
   });
 
+  const { toasts, addToast, removeToast } = useToast();
+
   useEffect(() => {
     loadData();
   }, [searchTerm, statusFilter]);
 
   const loadData = async () => {
+    // Only show full loading skeleton on initial load or clear filter
+    if (jobs.length === 0) setLoading(true);
+    
     try {
       const params = {};
       if (searchTerm) params.search = searchTerm;
@@ -32,6 +39,7 @@ function Jobs() {
       setVehicles(vehiclesRes.data);
     } catch (error) {
       console.error('Failed to load data:', error);
+      addToast('Failed to load jobs data', 'error');
     } finally {
       setLoading(false);
     }
@@ -43,9 +51,11 @@ function Jobs() {
       await createJob(formData);
       setShowModal(false);
       setFormData({ vehicle_id: '', description: '', priority: 'normal', technician: '', odometer_in: '' });
+      addToast('Job created successfully!', 'success');
       loadData();
     } catch (error) {
-      alert(error.response?.data?.error || 'Failed to create job');
+      const msg = error.response?.data?.error || 'Failed to create job';
+      addToast(msg, 'error');
     }
   };
 
@@ -53,6 +63,8 @@ function Jobs() {
 
   return (
     <>
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
+      
       <header className="main-header">
         <h1 className="page-title">Jobs</h1>
         <button className="btn btn-primary" onClick={() => setShowModal(true)}>
@@ -94,7 +106,9 @@ function Jobs() {
 
         <div className="card">
           {loading ? (
-            <div className="loading"><div className="spinner"></div></div>
+            <div style={{ padding: '1.5rem' }}>
+              <SkeletonTable rows={5} columns={7} />
+            </div>
           ) : jobs.length === 0 ? (
             <div className="empty-state">
               <Wrench size={64} />
