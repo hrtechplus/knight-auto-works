@@ -58,7 +58,7 @@ export const validators = {
 
   // Check if value is a positive number
   positiveNumber: (value, fieldName) => {
-    if (value === undefined || value === null) return null; // Optional
+    if (value === undefined || value === null || value === '') return null; // Optional
     const num = parseFloat(value);
     if (isNaN(num) || num < 0) {
       return `${fieldName} must be a positive number`;
@@ -66,10 +66,11 @@ export const validators = {
     return null;
   },
 
-  // Check if value is a valid integer
+  // Check if value is a valid integer (handles string numbers from forms)
   integer: (value, fieldName) => {
-    if (value === undefined || value === null) return null; // Optional
-    if (!Number.isInteger(Number(value))) {
+    if (value === undefined || value === null || value === '') return null; // Optional
+    const num = Number(value);
+    if (isNaN(num) || !Number.isInteger(num)) {
       return `${fieldName} must be a whole number`;
     }
     return null;
