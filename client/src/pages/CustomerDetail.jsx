@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Car, Phone, Mail, MapPin, Edit, Plus, Wrench } from 'lucide-react';
 import { getCustomer, updateCustomer } from '../api';
+import Breadcrumb from '../components/Breadcrumb';
+import Avatar from '../components/Avatar';
+import { SkeletonCard } from '../components/Skeleton';
 
 function CustomerDetail() {
   const { id } = useParams();
@@ -25,7 +28,14 @@ function CustomerDetail() {
   };
 
   if (loading) {
-    return <div className="loading"><div className="spinner"></div></div>;
+    return (
+      <div className="main-body">
+        <div className="detail-grid">
+          <SkeletonCard />
+          <SkeletonCard />
+        </div>
+      </div>
+    );
   }
 
   if (!customer) {
@@ -45,14 +55,16 @@ function CustomerDetail() {
     <>
       <header className="main-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <button className="btn btn-ghost" onClick={() => navigate('/customers')}>
-            <ArrowLeft size={20} />
-          </button>
           <h1 className="page-title">{customer.name}</h1>
         </div>
       </header>
       
       <div className="main-body">
+        <Breadcrumb items={[
+          { label: 'Customers', to: '/customers' },
+          { label: customer.name }
+        ]} />
+        
         <div className="detail-grid">
           {/* Customer Info */}
           <div className="card">

@@ -1,20 +1,48 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Search, X, Phone, Mail, MapPin } from 'lucide-react';
+import { Plus, Search, X, Phone, Mail, Edit2, Trash2, MoreVertical } from 'lucide-react';
 import { getCustomers, createCustomer, updateCustomer, deleteCustomer } from '../api';
+import EmptyState from '../components/EmptyState';
+import Avatar from '../components/Avatar';
+import ConfirmDialog from '../components/ConfirmDialog';
+import { SkeletonTable } from '../components/Skeleton';
 
 function Customers() {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [searching, setSearching] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [formData, setFormData] = useState({
     name: '', phone: '', email: '', address: '', notes: ''
   });
+  
+  // Confirmation dialog state
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    customerId: null,
+    customerName: ''
+  });
+  
+  // Action menu state
+  const [openMenuId, setOpenMenuId] = useState(null);
 
   useEffect(() => {
     loadCustomers();
+  }, []);
+  
+  // Debounced search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchTerm !== '') {
+        setSearching(true);
+        loadCustomers().finally(() => setSearching(false));
+      } else {
+        loadCustomers();
+      }
+    }, 300);
+    return () => clearTimeout(timer);
   }, [searchTerm]);
 
   const loadCustomers = async () => {
@@ -46,6 +74,7 @@ function Customers() {
   };
 
   const handleEdit = (customer) => {
+    setOpenMenuId(null);
     setEditingCustomer(customer);
     setFormData({
       name: customer.name || '',
@@ -57,14 +86,21 @@ function Customers() {
     setShowModal(true);
   };
 
-  const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you want to delete this customer?')) {
-      try {
-        await deleteCustomer(id);
-        loadCustomers();
-      } catch (error) {
-        console.error('Failed to delete customer:', error);
-      }
+  const handleDeleteClick = (customer) => {
+    setOpenMenuId(null);
+    setConfirmDialog({
+      isOpen: true,
+      customerId: customer.id,
+      customerName: customer.name
+    });
+  };
+
+  const handleDeleteConfirm = async () => {
+    try {
+      await deleteCustomer(confirmDialog.customerId);
+      loadCustomers();
+    } catch (error) {
+      console.error('Failed to delete customer:', error);
     }
   };
 
@@ -73,6 +109,15 @@ function Customers() {
     setFormData({ name: '', phone: '', email: '', address: '', notes: '' });
     setShowModal(true);
   };
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => setOpenMenuId(null);
+    if (openMenuId) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [openMenuId]);
 
   return (
     <>
@@ -91,56 +136,65 @@ function Customers() {
             <input
               type="text"
               className="search-input"
-              placeholder="Search customers..."
+              placeholder="Search customers by name, phone, or email..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
+            {searching && (
+              <div className="search-loading">
+                <div className="spinner"></div>
+              </div>
+            )}
           </div>
         </div>
 
         <div className="card">
           {loading ? (
-            <div className="loading"><div className="spinner"></div></div>
+            <SkeletonTable rows={5} columns={5} />
           ) : customers.length === 0 ? (
-            <div className="empty-state">
-              <Users size={64} />
-              <h3>No customers yet</h3>
-              <p>Add your first customer to get started</p>
-              <button className="btn btn-primary" onClick={openNewModal} style={{ marginTop: '1rem' }}>
-                <Plus size={18} /> Add Customer
-              </button>
-            </div>
+            <EmptyState 
+              type={searchTerm ? 'search' : 'customers'} 
+              onAction={openNewModal}
+            />
           ) : (
             <div className="table-container">
               <table>
                 <thead>
                   <tr>
-                    <th>Name</th>
+                    <th>Customer</th>
                     <th>Phone</th>
                     <th>Email</th>
                     <th>Vehicles</th>
-                    <th>Actions</th>
+                    <th style={{ width: '80px' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {customers.map(customer => (
                     <tr key={customer.id}>
                       <td>
-                        <Link to={`/customers/${customer.id}`} style={{ color: 'var(--primary-light)', textDecoration: 'none', fontWeight: '500' }}>
-                          {customer.name}
-                        </Link>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                          <Avatar name={customer.name} size={36} />
+                          <Link 
+                            to={`/customers/${customer.id}`} 
+                            style={{ color: 'var(--primary)', textDecoration: 'none', fontWeight: '500' }}
+                          >
+                            {customer.name}
+                          </Link>
+                        </div>
                       </td>
                       <td>
                         {customer.phone && (
                           <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <Phone size={14} /> {customer.phone}
+                            <Phone size={14} style={{ color: 'var(--text-muted)' }} /> 
+                            {customer.phone}
                           </span>
                         )}
                       </td>
                       <td>
                         {customer.email && (
                           <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <Mail size={14} /> {customer.email}
+                            <Mail size={14} style={{ color: 'var(--text-muted)' }} /> 
+                            {customer.email}
                           </span>
                         )}
                       </td>
@@ -148,13 +202,32 @@ function Customers() {
                         <span className="badge badge-normal">{customer.vehicle_count} vehicles</span>
                       </td>
                       <td>
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          <button className="btn btn-ghost btn-sm" onClick={() => handleEdit(customer)}>
-                            Edit
+                        <div className="action-menu-wrapper">
+                          <button 
+                            className="action-menu-trigger"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenMenuId(openMenuId === customer.id ? null : customer.id);
+                            }}
+                          >
+                            <MoreVertical size={18} />
                           </button>
-                          <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(customer.id)} style={{ color: 'var(--danger)' }}>
-                            Delete
-                          </button>
+                          {openMenuId === customer.id && (
+                            <div className="action-menu" onClick={e => e.stopPropagation()}>
+                              <button 
+                                className="action-menu-item"
+                                onClick={() => handleEdit(customer)}
+                              >
+                                <Edit2 size={16} /> Edit
+                              </button>
+                              <button 
+                                className="action-menu-item danger"
+                                onClick={() => handleDeleteClick(customer)}
+                              >
+                                <Trash2 size={16} /> Delete
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -166,7 +239,7 @@ function Customers() {
         </div>
       </div>
 
-      {/* Modal */}
+      {/* Add/Edit Modal */}
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
@@ -185,7 +258,9 @@ function Customers() {
                     className="form-control"
                     value={formData.name}
                     onChange={(e) => setFormData({...formData, name: e.target.value})}
+                    placeholder="Enter customer name"
                     required
+                    autoFocus
                   />
                 </div>
                 <div className="form-row">
@@ -196,6 +271,7 @@ function Customers() {
                       className="form-control"
                       value={formData.phone}
                       onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                      placeholder="e.g., 077 123 4567"
                     />
                   </div>
                   <div className="form-group">
@@ -205,6 +281,7 @@ function Customers() {
                       className="form-control"
                       value={formData.email}
                       onChange={(e) => setFormData({...formData, email: e.target.value})}
+                      placeholder="e.g., john@example.com"
                     />
                   </div>
                 </div>
@@ -214,6 +291,7 @@ function Customers() {
                     className="form-control"
                     value={formData.address}
                     onChange={(e) => setFormData({...formData, address: e.target.value})}
+                    placeholder="Street address, city, postal code"
                     rows={2}
                   />
                 </div>
@@ -223,6 +301,7 @@ function Customers() {
                     className="form-control"
                     value={formData.notes}
                     onChange={(e) => setFormData({...formData, notes: e.target.value})}
+                    placeholder="Any additional notes about this customer"
                     rows={2}
                   />
                 </div>
@@ -239,17 +318,20 @@ function Customers() {
           </div>
         </div>
       )}
+
+      {/* Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog({ isOpen: false, customerId: null, customerName: '' })}
+        onConfirm={handleDeleteConfirm}
+        title="Delete Customer"
+        message={`Are you sure you want to delete "${confirmDialog.customerName}"? This action cannot be undone and will also remove all associated vehicles.`}
+        confirmText="Delete Customer"
+        variant="danger"
+      />
     </>
   );
 }
 
-const Users = ({ size }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-    <circle cx="9" cy="7" r="4"/>
-    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-  </svg>
-);
-
 export default Customers;
+

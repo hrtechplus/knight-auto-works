@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, X, Trash2, Package, FileText, Check, Play, Clock } from 'lucide-react';
 import { getJob, updateJob, addJobItem, deleteJobItem, addJobPart, deleteJobPart, getInventory, createInvoiceFromJob } from '../api';
+import Breadcrumb from '../components/Breadcrumb';
+import { SkeletonCard } from '../components/Skeleton';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 function JobDetail() {
   const { id } = useParams();
@@ -15,6 +18,14 @@ function JobDetail() {
   const [partForm, setPartForm] = useState({ inventory_id: '', part_name: '', quantity: 1, unit_price: 0 });
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState({});
+  
+  // Confirmation dialog state
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    type: '', // 'item' or 'part'
+    id: null,
+    message: ''
+  });
 
   useEffect(() => {
     loadData();
@@ -56,10 +67,21 @@ function JobDetail() {
   };
 
   const handleDeleteItem = async (itemId) => {
-    if (window.confirm('Remove this service?')) {
-      await deleteJobItem(id, itemId);
-      loadData();
+    setConfirmDialog({
+      isOpen: true,
+      type: 'item',
+      id: itemId,
+      message: 'Are you sure you want to remove this service?'
+    });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (confirmDialog.type === 'item') {
+      await deleteJobItem(id, confirmDialog.id);
+    } else if (confirmDialog.type === 'part') {
+      await deleteJobPart(id, confirmDialog.id);
     }
+    loadData();
   };
 
   const handleAddPart = async (e) => {
@@ -75,10 +97,12 @@ function JobDetail() {
   };
 
   const handleDeletePart = async (partId) => {
-    if (window.confirm('Remove this part? Stock will be returned.')) {
-      await deleteJobPart(id, partId);
-      loadData();
-    }
+    setConfirmDialog({
+      isOpen: true,
+      type: 'part',
+      id: partId,
+      message: 'Remove this part? Stock will be returned to inventory.'
+    });
   };
 
   const handleInventorySelect = (invId) => {
@@ -123,8 +147,32 @@ function JobDetail() {
     }
   };
 
+  const [statusConfirm, setStatusConfirm] = useState({ isOpen: false, action: '', status: '' });
+
+  // Handle status change with confirmation for critical actions
+  const requestStatusChange = (newStatus, action) => {
+    const criticalActions = ['cancelled', 'completed'];
+    if (criticalActions.includes(newStatus)) {
+      setStatusConfirm({ isOpen: true, action, status: newStatus });
+    } else {
+      handleStatusChange(newStatus);
+    }
+  };
+
+  const confirmStatusChange = async () => {
+    await handleStatusChange(statusConfirm.status);
+    setStatusConfirm({ isOpen: false, action: '', status: '' });
+  };
+
   if (loading) {
-    return <div className="loading"><div className="spinner"></div></div>;
+    return (
+      <div className="main-body">
+        <div className="detail-grid">
+          <SkeletonCard />
+          <SkeletonCard />
+        </div>
+      </div>
+    );
   }
 
   if (!job) {
@@ -145,6 +193,29 @@ function JobDetail() {
   const partsTotal = job.parts?.reduce((sum, p) => sum + p.total, 0) || 0;
   const grandTotal = laborTotal + itemsTotal + partsTotal;
 
+  // Status action button configurations
+  const statusActions = {
+    pending: [
+      { label: 'Start Work', icon: Play, status: 'in_progress', variant: 'primary' },
+      { label: 'Cancel Job', icon: X, status: 'cancelled', variant: 'danger' }
+    ],
+    in_progress: [
+      { label: 'Put on Hold', icon: Clock, status: 'pending', variant: 'secondary' },
+      { label: 'Complete', icon: Check, status: 'completed', variant: 'success' },
+      { label: 'Cancel Job', icon: X, status: 'cancelled', variant: 'danger' }
+    ],
+    completed: [
+      { label: 'Reopen Job', icon: Play, status: 'in_progress', variant: 'secondary' },
+      { label: 'Create Invoice', icon: FileText, status: null, variant: 'primary', action: 'invoice' }
+    ],
+    invoiced: [],
+    cancelled: [
+      { label: 'Reactivate', icon: Play, status: 'pending', variant: 'primary' }
+    ]
+  };
+
+  const currentActions = statusActions[job.status] || [];
+
   return (
     <>
       <header className="main-header">
@@ -159,31 +230,96 @@ function JobDetail() {
             </div>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '0.75rem' }}>
-          {job.status === 'pending' && (
-            <button className="btn btn-primary" onClick={() => handleStatusChange('in_progress')}>
-              <Play size={18} /> Start Job
-            </button>
-          )}
-          {job.status === 'in_progress' && (
-            <button className="btn btn-success" onClick={() => handleStatusChange('completed')}>
-              <Check size={18} /> Complete
-            </button>
-          )}
-          {job.status === 'completed' && !job.invoice && (
-            <button className="btn btn-primary" onClick={handleCreateInvoice}>
-              <FileText size={18} /> Create Invoice
-            </button>
-          )}
-          {job.invoice && (
-            <Link to={`/invoices/${job.invoice.id}`} className="btn btn-secondary">
-              <FileText size={18} /> View Invoice
-            </Link>
-          )}
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          {/* Status Badge */}
+          <span className={`badge badge-${job.status}`} style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
+            {job.status.replace('_', ' ').toUpperCase()}
+          </span>
+          
+          {/* Action Buttons based on current status */}
+          {currentActions.map((action, idx) => {
+            if (action.action === 'invoice') {
+              return job.invoice ? (
+                <Link key={idx} to={`/invoices/${job.invoice.id}`} className="btn btn-secondary">
+                  <FileText size={18} /> View Invoice
+                </Link>
+              ) : (
+                <button key={idx} className="btn btn-primary" onClick={handleCreateInvoice}>
+                  <FileText size={18} /> Create Invoice
+                </button>
+              );
+            }
+            
+            const Icon = action.icon;
+            return (
+              <button
+                key={idx}
+                className={`btn btn-${action.variant}`}
+                onClick={() => requestStatusChange(action.status, action.label)}
+              >
+                <Icon size={18} /> {action.label}
+              </button>
+            );
+          })}
         </div>
       </header>
+
+      {/* Status Change Confirmation Dialog */}
+      {statusConfirm.isOpen && (
+        <div className="modal-overlay" onClick={() => setStatusConfirm({ isOpen: false, action: '', status: '' })}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="modal-title">Confirm Action</h2>
+              <button className="modal-close" onClick={() => setStatusConfirm({ isOpen: false, action: '', status: '' })}>
+                <X size={20} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <p>Are you sure you want to <strong>{statusConfirm.action}</strong> this job?</p>
+              {statusConfirm.status === 'cancelled' && (
+                <div style={{ 
+                  background: 'rgba(239, 68, 68, 0.1)', 
+                  border: '1px solid var(--danger)', 
+                  borderRadius: 'var(--radius-md)', 
+                  padding: '0.75rem',
+                  marginTop: '1rem'
+                }}>
+                  ⚠️ This will mark the job as cancelled. You can reactivate it later if needed.
+                </div>
+              )}
+              {statusConfirm.status === 'completed' && (
+                <div style={{ 
+                  background: 'rgba(34, 197, 94, 0.1)', 
+                  border: '1px solid var(--success)', 
+                  borderRadius: 'var(--radius-md)', 
+                  padding: '0.75rem',
+                  marginTop: '1rem'
+                }}>
+                  ✓ Job will be marked as completed. You can then create an invoice for the customer.
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setStatusConfirm({ isOpen: false, action: '', status: '' })}>
+                Cancel
+              </button>
+              <button 
+                className={`btn ${statusConfirm.status === 'cancelled' ? 'btn-danger' : 'btn-success'}`} 
+                onClick={confirmStatusChange}
+              >
+                Yes, {statusConfirm.action}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       
       <div className="main-body">
+        <Breadcrumb items={[
+          { label: 'Jobs', to: '/jobs' },
+          { label: job.job_number }
+        ]} />
+        
         <div className="detail-grid">
           {/* Job Info */}
           <div className="card">
@@ -508,6 +644,17 @@ function JobDetail() {
           </div>
         </div>
       )}
+
+      {/* Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog({ isOpen: false, type: '', id: null, message: '' })}
+        onConfirm={handleConfirmDelete}
+        title={confirmDialog.type === 'item' ? 'Remove Service' : 'Remove Part'}
+        message={confirmDialog.message}
+        confirmText="Remove"
+        variant="danger"
+      />
     </>
   );
 }
