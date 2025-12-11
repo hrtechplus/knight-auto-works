@@ -21,16 +21,25 @@ const toastColors = {
 
 export function Toast({ message, type = 'info', onClose, duration = 5000 }) {
   const Icon = toastIcons[type] || Info;
+  const [isExiting, setIsExiting] = useState(false);
   
   useEffect(() => {
     if (duration > 0) {
-      const timer = setTimeout(onClose, duration);
+      const timer = setTimeout(() => {
+        setIsExiting(true);
+        setTimeout(onClose, 300);
+      }, duration);
       return () => clearTimeout(timer);
     }
   }, [duration, onClose]);
 
+  const handleClose = () => {
+    setIsExiting(true);
+    setTimeout(onClose, 300);
+  };
+
   return (
-    <div className="toast" style={{
+    <div className={`toast toast-${type} ${isExiting ? 'toast-exit' : ''}`} style={{
       display: 'flex',
       alignItems: 'center',
       gap: '0.75rem',
@@ -38,24 +47,51 @@ export function Toast({ message, type = 'info', onClose, duration = 5000 }) {
       background: 'var(--bg-secondary)',
       border: `1px solid ${toastColors[type]}`,
       borderLeft: `4px solid ${toastColors[type]}`,
-      borderRadius: '0.5rem',
-      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-      minWidth: '300px',
+      borderRadius: '0.75rem',
+      boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
+      minWidth: '320px',
       maxWidth: '500px',
-      animation: 'slideIn 0.3s ease'
+      animation: isExiting ? 'toastSlideOut 0.3s ease forwards' : 'toastSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+      position: 'relative',
+      overflow: 'hidden'
     }}>
-      <Icon size={20} color={toastColors[type]} />
-      <span style={{ flex: 1, fontSize: '0.9rem' }}>{message}</span>
+      {/* Success burst animation */}
+      {type === 'success' && !isExiting && (
+        <div className="toast-success-burst" style={{
+          position: 'absolute',
+          inset: 0,
+          background: 'linear-gradient(90deg, transparent, rgba(34, 197, 94, 0.1), transparent)',
+          animation: 'successBurst 0.6s ease-out'
+        }} />
+      )}
+      
+      <div className={type === 'success' ? 'toast-icon-success' : ''} style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        animation: type === 'success' ? 'successPop 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55)' : 'none'
+      }}>
+        <Icon size={22} color={toastColors[type]} />
+      </div>
+      
+      <span style={{ flex: 1, fontSize: '0.9rem', fontWeight: 500, position: 'relative', zIndex: 1 }}>
+        {message}
+      </span>
+      
       <button 
-        onClick={onClose}
+        onClick={handleClose}
         style={{
           background: 'none',
           border: 'none',
           cursor: 'pointer',
-          padding: '0.25rem',
+          padding: '0.375rem',
           color: 'var(--text-muted)',
-          display: 'flex'
+          display: 'flex',
+          borderRadius: '0.25rem',
+          transition: 'all 0.15s ease'
         }}
+        onMouseOver={(e) => e.currentTarget.style.background = 'var(--bg-hover)'}
+        onMouseOut={(e) => e.currentTarget.style.background = 'none'}
       >
         <X size={18} />
       </button>
