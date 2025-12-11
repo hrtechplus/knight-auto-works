@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, NavLink, useNavigate } from 'react-router-dom';
 import { 
   LayoutDashboard, Users, Car, Wrench, Package, FileText, Receipt, 
-  Settings, TrendingUp, Shield, LogOut, User
+  Settings, TrendingUp, Shield, LogOut, User, Search
 } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import Customers from './pages/Customers';
@@ -18,11 +18,20 @@ import Expenses from './pages/Expenses';
 import Reports from './pages/Reports';
 import SettingsPage from './pages/Settings';
 import Login from './pages/Login';
+import QuickSearch from './components/QuickSearch';
+import useKeyboardShortcuts from './hooks/useKeyboardShortcuts';
 import { getStoredUser, logout, setUnauthorizedHandler } from './api';
 import './index.css';
 
 function AppContent({ user, onLogout }) {
   const navigate = useNavigate();
+  const [showQuickSearch, setShowQuickSearch] = useState(false);
+
+  // Global keyboard shortcuts
+  useKeyboardShortcuts({
+    'ctrl+k': () => setShowQuickSearch(true),
+    'escape': () => setShowQuickSearch(false)
+  });
 
   useEffect(() => {
     // Handle 401 responses by logging out
@@ -34,6 +43,12 @@ function AppContent({ user, onLogout }) {
 
   return (
     <div className="app-container">
+      {/* Quick Search Modal */}
+      <QuickSearch 
+        isOpen={showQuickSearch} 
+        onClose={() => setShowQuickSearch(false)} 
+      />
+
       {/* Sidebar */}
       <aside className="sidebar">
         <div className="sidebar-header">
@@ -46,6 +61,26 @@ function AppContent({ user, onLogout }) {
               <div className="logo-subtext">Workshop</div>
             </div>
           </div>
+        </div>
+
+        {/* Quick Search Trigger */}
+        <div style={{ padding: '0 1rem', marginBottom: '0.5rem' }}>
+          <button 
+            className="btn btn-ghost" 
+            onClick={() => setShowQuickSearch(true)}
+            style={{ 
+              width: '100%', 
+              justifyContent: 'flex-start',
+              color: 'var(--text-muted)',
+              fontSize: '0.875rem'
+            }}
+          >
+            <Search size={16} />
+            Quick Search
+            <span className="shortcut-hint" style={{ marginLeft: 'auto' }}>
+              <kbd>⌘</kbd><kbd>K</kbd>
+            </span>
+          </button>
         </div>
         
         <nav className="sidebar-nav">
