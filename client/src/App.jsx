@@ -38,12 +38,16 @@ function AppContent({ user, onLogout }) {
       <aside className="sidebar">
         <div className="sidebar-header">
           <div className="logo">
-            <div className="logo-icon">
-              <Shield size={28} />
+            <div className="logo-icon" style={{ overflow: 'hidden' }}>
+              <img 
+                src="/logoknight.jpg" 
+                alt="Knight Auto" 
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
             </div>
             <div>
               <div className="logo-text">Knight Auto</div>
-              <div className="logo-subtext">Workshop</div>
+              <div className="logo-subtext">Works</div>
             </div>
           </div>
         </div>
