@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Search, X, Users, Car, Wrench, FileText, ArrowRight, Command } from 'lucide-react';
-import useKeyboardShortcuts from '../hooks/useKeyboardShortcuts';
+import { useNavigate } from 'react-router-dom';
+import { Search, Users, Car, Wrench, FileText, ArrowRight } from 'lucide-react';
 
 /**
  * Global Quick Search Component
@@ -76,7 +75,7 @@ export default function QuickSearch({ isOpen, onClose }) {
     <div className="modal-overlay quick-search-overlay" onClick={onClose}>
       <div className="quick-search-modal" onClick={e => e.stopPropagation()}>
         <div className="quick-search-header">
-          <Search size={20} className="quick-search-icon" />
+          <Search size={22} className="quick-search-icon" />
           <input
             ref={inputRef}
             type="text"
@@ -99,7 +98,7 @@ export default function QuickSearch({ isOpen, onClose }) {
           ) : (
             <>
               {query === '' && (
-                <div className="quick-search-section-title">Quick Actions</div>
+                <div className="quick-search-section-title">Suggested Actions</div>
               )}
               {results.map((item, index) => {
                 const Icon = item.icon;
@@ -110,9 +109,12 @@ export default function QuickSearch({ isOpen, onClose }) {
                     onClick={() => handleSelect(item)}
                     onMouseEnter={() => setSelectedIndex(index)}
                   >
-                    <Icon size={18} className="quick-search-item-icon" />
+                    <Icon size={20} className="quick-search-item-icon" strokeWidth={2} />
                     <span className="quick-search-item-label">{item.label}</span>
-                    <ArrowRight size={14} className="quick-search-item-arrow" />
+                    <span className="quick-search-badge">
+                      {item.type === 'action' ? 'Action' : 'Page'}
+                    </span>
+                    <ArrowRight size={16} className="quick-search-item-arrow" />
                   </button>
                 );
               })}
@@ -121,9 +123,8 @@ export default function QuickSearch({ isOpen, onClose }) {
         </div>
         
         <div className="quick-search-footer">
-          <span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span>
-          <span><kbd>↵</kbd> Select</span>
-          <span><kbd>ESC</kbd> Close</span>
+          <span><kbd>↑</kbd><kbd>↓</kbd> to navigate</span>
+          <span><kbd>↵</kbd> to select</span>
         </div>
       </div>
     </div>

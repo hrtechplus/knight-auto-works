@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, X, Printer, DollarSign } from 'lucide-react';
-import { getInvoice, addPayment } from '../api';
+import { ArrowLeft, X, Printer, DollarSign, Download } from 'lucide-react';
+import { getInvoice, addPayment, downloadInvoicePdf } from '../api';
 
 function InvoiceDetail() {
   const { id } = useParams();
@@ -42,6 +42,21 @@ function InvoiceDetail() {
     window.print();
   };
 
+  const handleDownloadPdf = async () => {
+    try {
+      const response = await downloadInvoicePdf(id);
+      // Create a blob from the response
+      const file = new Blob([response.data], { type: 'application/pdf' });
+      // Create a link to download it
+      const fileURL = URL.createObjectURL(file);
+      // Open in new tab
+      window.open(fileURL, '_blank');
+    } catch (error) {
+      console.error('Error downloading PDF:', error);
+      alert('Failed to download PDF');
+    }
+  };
+
   if (loading) {
     return <div className="loading"><div className="spinner"></div></div>;
   }
@@ -72,6 +87,12 @@ function InvoiceDetail() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: '0.75rem' }}>
+          <button 
+            className="btn btn-primary" 
+            onClick={handleDownloadPdf}
+          >
+            <Download size={18} /> Download PDF
+          </button>
           <button className="btn btn-secondary" onClick={handlePrint}>
             <Printer size={18} /> Print
           </button>

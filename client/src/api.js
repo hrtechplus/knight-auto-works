@@ -215,7 +215,7 @@ export const createInvoice = (data) => api.post('/invoices', data);
 export const createInvoiceFromJob = (jobId) => api.post(`/invoices/from-job/${jobId}`);
 export const addPayment = (invoiceId, data) => api.post(`/invoices/${invoiceId}/payments`, data);
 export const getOverdueInvoices = () => api.get('/invoices/overdue');
-export const downloadInvoicePdf = (id) => `${API_BASE}/invoices/${id}/pdf?token=${getToken()}`;
+export const downloadInvoicePdf = (id) => api.get(`/invoices/${id}/pdf`, { responseType: 'blob' });
 
 // ============================================
 // EXPENSES
