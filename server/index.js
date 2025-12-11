@@ -220,14 +220,16 @@ app.get('/api/customers', (req, res) => {
     }
     res.json(customers);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
   }
 });
 
 app.get('/api/customers/:id', (req, res) => {
   try {
     const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
-    if (!customer) return res.status(404).json({ error: 'Customer not found' });
+    if (!customer) {
+      return res.status(404).json(createError(ErrorCodes.NOT_FOUND, 'Customer not found'));
+    }
     
     const vehicles = db.prepare('SELECT * FROM vehicles WHERE customer_id = ?').all(req.params.id);
     const invoices = db.prepare(`
@@ -236,42 +238,98 @@ app.get('/api/customers/:id', (req, res) => {
     
     res.json({ ...customer, vehicles, invoices });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
   }
 });
 
 app.post('/api/customers', (req, res) => {
   try {
+    // Validate input
+    const errors = validate(req.body, schemas.customer);
+    if (errors) {
+      return res.status(400).json(createError(ErrorCodes.VALIDATION_ERROR, 'Validation failed', errors));
+    }
+    
     const { name, phone, email, address, notes } = req.body;
     const result = db.prepare(`
       INSERT INTO customers (name, phone, email, address, notes)
       VALUES (?, ?, ?, ?, ?)
     `).run(name, phone, email, address, notes);
-    res.json({ id: result.lastInsertRowid, ...req.body });
+    
+    const newCustomer = { id: result.lastInsertRowid, ...req.body };
+    auditLog('customers', result.lastInsertRowid, 'create', null, newCustomer);
+    res.json(newCustomer);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
   }
 });
 
 app.put('/api/customers/:id', (req, res) => {
   try {
+    // Validate input
+    const errors = validate(req.body, schemas.customer);
+    if (errors) {
+      return res.status(400).json(createError(ErrorCodes.VALIDATION_ERROR, 'Validation failed', errors));
+    }
+    
+    const oldCustomer = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
+    if (!oldCustomer) {
+      return res.status(404).json(createError(ErrorCodes.NOT_FOUND, 'Customer not found'));
+    }
+    
     const { name, phone, email, address, notes } = req.body;
     db.prepare(`
       UPDATE customers SET name = ?, phone = ?, email = ?, address = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(name, phone, email, address, notes, req.params.id);
-    res.json({ id: req.params.id, ...req.body });
+    
+    const updatedCustomer = { id: req.params.id, ...req.body };
+    auditLog('customers', req.params.id, 'update', oldCustomer, updatedCustomer);
+    res.json(updatedCustomer);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
   }
 });
 
 app.delete('/api/customers/:id', (req, res) => {
   try {
+    const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
+    if (!customer) {
+      return res.status(404).json(createError(ErrorCodes.NOT_FOUND, 'Customer not found'));
+    }
+    
+    // Check for open jobs (not completed/cancelled/invoiced)
+    const openJobs = db.prepare(`
+      SELECT COUNT(*) as count FROM jobs j
+      JOIN vehicles v ON j.vehicle_id = v.id
+      WHERE v.customer_id = ? AND j.status NOT IN ('completed', 'cancelled', 'invoiced')
+    `).get(req.params.id);
+    
+    if (openJobs.count > 0) {
+      return res.status(400).json(createError(
+        ErrorCodes.BUSINESS_RULE, 
+        `Cannot delete customer with ${openJobs.count} open job(s). Complete or cancel jobs first.`
+      ));
+    }
+    
+    // Check for unpaid invoices
+    const unpaidInvoices = db.prepare(`
+      SELECT COUNT(*) as count FROM invoices
+      WHERE customer_id = ? AND status != 'paid'
+    `).get(req.params.id);
+    
+    if (unpaidInvoices.count > 0) {
+      return res.status(400).json(createError(
+        ErrorCodes.BUSINESS_RULE, 
+        `Cannot delete customer with ${unpaidInvoices.count} unpaid invoice(s). Collect payments first.`
+      ));
+    }
+    
     db.prepare('DELETE FROM customers WHERE id = ?').run(req.params.id);
+    auditLog('customers', req.params.id, 'delete', customer, null);
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
   }
 });
 
@@ -300,7 +358,7 @@ app.get('/api/vehicles', (req, res) => {
     query += ' ORDER BY v.created_at DESC';
     res.json(db.prepare(query).all(...params));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
   }
 });
 
@@ -312,55 +370,115 @@ app.get('/api/vehicles/:id', (req, res) => {
       JOIN customers c ON v.customer_id = c.id
       WHERE v.id = ?
     `).get(req.params.id);
-    if (!vehicle) return res.status(404).json({ error: 'Vehicle not found' });
+    if (!vehicle) {
+      return res.status(404).json(createError(ErrorCodes.NOT_FOUND, 'Vehicle not found'));
+    }
     
     const jobs = db.prepare(`
       SELECT * FROM jobs WHERE vehicle_id = ? ORDER BY created_at DESC
     `).all(req.params.id);
     
-    res.json({ ...vehicle, jobs });
+    // Get service reminders
+    const reminders = db.prepare(`
+      SELECT * FROM service_reminders WHERE vehicle_id = ? ORDER BY due_date ASC
+    `).all(req.params.id);
+    
+    res.json({ ...vehicle, jobs, reminders });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
   }
 });
 
 app.post('/api/vehicles', (req, res) => {
   try {
+    // Validate input
+    const errors = validate(req.body, schemas.vehicle);
+    if (errors) {
+      return res.status(400).json(createError(ErrorCodes.VALIDATION_ERROR, 'Validation failed', errors));
+    }
+    
     const { customer_id, plate_number, make, model, year, vin, color, engine_type, transmission, odometer, notes } = req.body;
+    
+    // Check customer exists
+    const customer = db.prepare('SELECT id FROM customers WHERE id = ?').get(customer_id);
+    if (!customer) {
+      return res.status(404).json(createError(ErrorCodes.NOT_FOUND, 'Customer not found'));
+    }
+    
     const result = db.prepare(`
       INSERT INTO vehicles (customer_id, plate_number, make, model, year, vin, color, engine_type, transmission, odometer, notes)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(customer_id, plate_number, make, model, year, vin, color, engine_type, transmission, odometer || 0, notes);
-    res.json({ id: result.lastInsertRowid, ...req.body });
+    
+    const newVehicle = { id: result.lastInsertRowid, ...req.body };
+    auditLog('vehicles', result.lastInsertRowid, 'create', null, newVehicle);
+    res.json(newVehicle);
   } catch (error) {
     if (error.message.includes('UNIQUE constraint failed')) {
-      res.status(400).json({ error: 'A vehicle with this plate number already exists' });
+      res.status(400).json(createError(ErrorCodes.CONFLICT, 'A vehicle with this plate number already exists'));
     } else {
-      res.status(500).json({ error: error.message });
+      res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
     }
   }
 });
 
 app.put('/api/vehicles/:id', (req, res) => {
   try {
+    // Validate input
+    const errors = validate(req.body, schemas.vehicle);
+    if (errors) {
+      return res.status(400).json(createError(ErrorCodes.VALIDATION_ERROR, 'Validation failed', errors));
+    }
+    
+    const oldVehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(req.params.id);
+    if (!oldVehicle) {
+      return res.status(404).json(createError(ErrorCodes.NOT_FOUND, 'Vehicle not found'));
+    }
+    
     const { customer_id, plate_number, make, model, year, vin, color, engine_type, transmission, odometer, notes } = req.body;
     db.prepare(`
       UPDATE vehicles SET customer_id = ?, plate_number = ?, make = ?, model = ?, year = ?, vin = ?, color = ?, 
       engine_type = ?, transmission = ?, odometer = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(customer_id, plate_number, make, model, year, vin, color, engine_type, transmission, odometer, notes, req.params.id);
-    res.json({ id: req.params.id, ...req.body });
+    
+    const updatedVehicle = { id: req.params.id, ...req.body };
+    auditLog('vehicles', req.params.id, 'update', oldVehicle, updatedVehicle);
+    res.json(updatedVehicle);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    if (error.message.includes('UNIQUE constraint failed')) {
+      res.status(400).json(createError(ErrorCodes.CONFLICT, 'A vehicle with this plate number already exists'));
+    } else {
+      res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
+    }
   }
 });
 
 app.delete('/api/vehicles/:id', (req, res) => {
   try {
+    const vehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(req.params.id);
+    if (!vehicle) {
+      return res.status(404).json(createError(ErrorCodes.NOT_FOUND, 'Vehicle not found'));
+    }
+    
+    // Check for open jobs
+    const openJobs = db.prepare(`
+      SELECT COUNT(*) as count FROM jobs 
+      WHERE vehicle_id = ? AND status NOT IN ('completed', 'cancelled', 'invoiced')
+    `).get(req.params.id);
+    
+    if (openJobs.count > 0) {
+      return res.status(400).json(createError(
+        ErrorCodes.BUSINESS_RULE, 
+        `Cannot delete vehicle with ${openJobs.count} open job(s). Complete or cancel jobs first.`
+      ));
+    }
+    
     db.prepare('DELETE FROM vehicles WHERE id = ?').run(req.params.id);
+    auditLog('vehicles', req.params.id, 'delete', vehicle, null);
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
   }
 });
 
