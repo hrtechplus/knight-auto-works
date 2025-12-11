@@ -31,11 +31,11 @@ app.use((req, res, next) => {
   next();
 });
 
+// Setup auth routes FIRST (login, logout, me, users) - before middleware
+setupAuthRoutes(app);
+
 // Authentication middleware (applied to all /api routes except login and health)
 app.use('/api', authMiddleware);
-
-// Setup auth routes (login, logout, me, users)
-setupAuthRoutes(app);
 
 // ============================================
 // AUDIT LOGGING

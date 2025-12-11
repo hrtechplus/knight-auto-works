@@ -42,31 +42,33 @@ export default function Login({ onLogin }) {
         border: '1px solid var(--border)'
       }}>
         {/* Logo */}
-        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+        <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
           <div style={{
-            width: '64px',
-            height: '64px',
-            background: 'linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%)',
-            borderRadius: 'var(--radius-md)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            margin: '0 auto 1rem',
-            boxShadow: 'var(--shadow-glow)'
+            width: '80px',
+            height: '80px',
+            borderRadius: 'var(--radius-lg)',
+            overflow: 'hidden',
+            margin: '0 auto 1.25rem',
+            boxShadow: '0 0 40px rgba(249, 115, 22, 0.3)'
           }}>
-            <Wrench size={32} color="white" />
+            <img 
+              src="/logoknight.jpg" 
+              alt="Knight Auto Works" 
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            />
           </div>
           <h1 style={{
-            fontSize: '1.5rem',
-            fontWeight: '700',
-            background: 'linear-gradient(135deg, var(--text-primary) 0%, var(--primary-light) 100%)',
+            fontSize: '1.75rem',
+            fontWeight: '800',
+            background: 'linear-gradient(135deg, var(--text-primary) 0%, var(--primary) 100%)',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text'
+            backgroundClip: 'text',
+            letterSpacing: '-0.5px'
           }}>
             Knight Auto Works
           </h1>
-          <p style={{ color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+          <p style={{ color: 'var(--text-muted)', marginTop: '0.75rem', fontSize: '0.9rem' }}>
             Sign in to your account
           </p>
         </div>
