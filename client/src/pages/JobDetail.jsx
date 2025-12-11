@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, X, Trash2, Package, FileText, Check, Play, Clock } from 'lucide-react';
-import { getJob, updateJob, addJobItem, deleteJobItem, addJobPart, deleteJobPart, getInventory, createInvoiceFromJob } from '../api';
+import { ArrowLeft, Plus, X, Trash2, Package, FileText, Check, Play, Clock, MessageSquare, Mail } from 'lucide-react';
+import { getJob, updateJob, addJobItem, deleteJobItem, addJobPart, deleteJobPart, getInventory, createInvoiceFromJob, sendEmailNotification } from '../api';
 import Breadcrumb from '../components/Breadcrumb';
 import { SkeletonCard } from '../components/Skeleton';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -14,6 +14,8 @@ function JobDetail() {
   const [loading, setLoading] = useState(true);
   const [showItemModal, setShowItemModal] = useState(false);
   const [showPartModal, setShowPartModal] = useState(false);
+  const [notificationLoading, setNotificationLoading] = useState(false);
+  const [showNotifyMenu, setShowNotifyMenu] = useState(false);
   const [itemForm, setItemForm] = useState({ description: '', quantity: 1, unit_price: 0 });
   const [partForm, setPartForm] = useState({ inventory_id: '', part_name: '', quantity: 1, unit_price: 0 });
   const [editMode, setEditMode] = useState(false);
@@ -164,6 +166,49 @@ function JobDetail() {
     setStatusConfirm({ isOpen: false, action: '', status: '' });
   };
 
+  const handleWhatsApp = () => {
+    if (!job.customer_phone) return alert('No customer phone number');
+    
+    // Format phone: remove spaces/dashes, ensure country code (default to local if missing)
+    let phone = job.customer_phone.replace(/\D/g, '');
+    // Simple logic: if length is 9 or 10, assume local and add default country code (e.g., 94 for Sri Lanka/India area)
+    // For now we just use what's there if it looks like a full number
+    
+    let message = '';
+    if (job.status === 'completed') {
+      message = `Hi ${job.customer_name}, your vehicle (${job.vehicle_plate}) is ready for pickup at Knight Auto Works. Total: Rs. ${job.total_cost}`;
+    } else {
+      message = `Hi ${job.customer_name}, update on your vehicle (${job.vehicle_plate}): Status is now ${job.status.replace('_', ' ')}. - Knight Auto Works`;
+    }
+    
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
+    setShowNotifyMenu(false);
+  };
+
+  const handleEmail = async () => {
+    if (!job.customer_email) return alert('No customer email address');
+    
+    setNotificationLoading(true);
+    try {
+      await sendEmailNotification({
+        to: job.customer_email,
+        type: 'jobReady',
+        data: {
+          customerName: job.customer_name,
+          vehicleCheck: `${job.vehicle_make} ${job.vehicle_model} (${job.vehicle_plate})`,
+          jobRef: job.job_number
+        }
+      });
+      alert('Email notification sent successfully!');
+    } catch (error) {
+      console.error('Failed to send email:', error);
+      alert('Failed to send email notification');
+    } finally {
+      setNotificationLoading(false);
+      setShowNotifyMenu(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="main-body">
@@ -235,6 +280,63 @@ function JobDetail() {
           <span className={`badge badge-${job.status}`} style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
             {job.status.replace('_', ' ').toUpperCase()}
           </span>
+
+          {/* Notification Menu */}
+          <div style={{ position: 'relative' }}>
+            <button 
+              className="btn btn-secondary"
+              onClick={() => setShowNotifyMenu(!showNotifyMenu)}
+              disabled={notificationLoading}
+            >
+              <MessageSquare size={18} /> Notify
+            </button>
+            
+            {showNotifyMenu && (
+              <div style={{
+                position: 'absolute',
+                top: '100%',
+                right: 0,
+                marginTop: '0.5rem',
+                background: 'var(--bg-card)',
+                border: '1px solid var(--border)',
+                borderRadius: '0.5rem',
+                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                zIndex: 50,
+                width: '200px',
+                overflow: 'hidden'
+              }}>
+                <button 
+                  onClick={handleWhatsApp}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '0.75rem',
+                    width: '100%', padding: '0.75rem 1rem',
+                    textAlign: 'left', background: 'none', border: 'none',
+                    color: 'var(--text-primary)', cursor: 'pointer',
+                    borderBottom: '1px solid var(--border)'
+                  }}
+                  onMouseOver={e => e.target.style.background = 'var(--bg-secondary)'}
+                  onMouseOut={e => e.target.style.background = 'none'}
+                >
+                  <MessageSquare size={16} color="#22c55e" /> WhatsApp
+                </button>
+                <button 
+                  onClick={handleEmail}
+                  disabled={!job.customer_email}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '0.75rem',
+                    width: '100%', padding: '0.75rem 1rem',
+                    textAlign: 'left', background: 'none', border: 'none',
+                    color: job.customer_email ? 'var(--text-primary)' : 'var(--text-muted)',
+                    cursor: job.customer_email ? 'pointer' : 'not-allowed'
+                  }}
+                  onMouseOver={e => job.customer_email && (e.target.style.background = 'var(--bg-secondary)')}
+                  onMouseOut={e => e.target.style.background = 'none'}
+                >
+                  <Mail size={16} color="#3b82f6" /> Email {job.customer_email ? '' : '(N/A)'}
+                </button>
+              </div>
+            )}
+          </div>
           
           {/* Action Buttons based on current status */}
           {currentActions.map((action, idx) => {

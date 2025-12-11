@@ -1262,6 +1262,34 @@ app.get('/api/invoices/:id/pdf', (req, res) => {
 });
 
 // ============================================
+// NOTIFICATION ROUTES
+// ============================================
+
+import { sendEmail } from './email.js';
+
+app.post('/api/notifications/email', authMiddleware, async (req, res) => {
+  try {
+    const { to, type, data } = req.body;
+    
+    // Log the attempt
+    console.log(`📧 Sending ${type} email to ${to}`);
+    
+    const result = await sendEmail({ to, type, data });
+    
+    // In dev mode, return the preview URL
+    res.json({ 
+      success: true, 
+      message: 'Email sent successfully', 
+      previewUrl: result.previewUrl 
+    });
+    
+  } catch (error) {
+    console.error('Email error:', error);
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, `Failed to send email: ${error.message}`));
+  }
+});
+
+// ============================================
 // PAYMENT ROUTES
 // ============================================
 

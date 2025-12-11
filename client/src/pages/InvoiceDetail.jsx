@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, X, Printer, DollarSign, Download } from 'lucide-react';
-import { getInvoice, addPayment, downloadInvoicePdf } from '../api';
+import { ArrowLeft, X, Printer, DollarSign, Download, MessageSquare, Mail } from 'lucide-react';
+import { getInvoice, addPayment, downloadInvoicePdf, sendEmailNotification } from '../api';
 
 function InvoiceDetail() {
   const { id } = useParams();
@@ -9,6 +9,8 @@ function InvoiceDetail() {
   const [invoice, setInvoice] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [notificationLoading, setNotificationLoading] = useState(false);
+  const [showNotifyMenu, setShowNotifyMenu] = useState(false);
   const [paymentForm, setPaymentForm] = useState({ amount: 0, payment_method: 'cash', reference: '', notes: '' });
 
   useEffect(() => {
@@ -57,6 +59,46 @@ function InvoiceDetail() {
     }
   };
 
+  const handleWhatsApp = () => {
+    if (!invoice.customer_phone) return alert('No customer phone number');
+    
+    // Format phone: remove spaces/dashes, ensure country code (default to local if missing)
+    let phone = invoice.customer_phone.replace(/\D/g, '');
+    
+    let message = `Hi ${invoice.customer_name}, please find attached your invoice #${invoice.invoice_number} from Knight Auto Works. Total: Rs. ${invoice.total}. Balance Due: Rs. ${invoice.balance}.`;
+    
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
+    setShowNotifyMenu(false);
+  };
+
+  const handleEmail = async () => {
+    if (!invoice.customer_email) return alert('No customer email address');
+    
+    setNotificationLoading(true);
+    try {
+      // For invoice, we might want to also send a link to download it
+      // Since we don't have a public link yet, we just send summary
+      await sendEmailNotification({
+        to: invoice.customer_email,
+        type: 'invoice',
+        data: {
+          customerName: invoice.customer_name,
+          vehicleCheck: 'your vehicle', // We could join vehicle details if available
+          invoiceNumber: invoice.invoice_number,
+          amount: `Rs. ${invoice.balance.toLocaleString()}`,
+          link: `(Link to invoke portal - Coming Soon)`
+        }
+      });
+      alert('Invoice email sent successfully!');
+    } catch (error) {
+      console.error('Failed to send email:', error);
+      alert('Failed to send email notification');
+    } finally {
+      setNotificationLoading(false);
+      setShowNotifyMenu(false);
+    }
+  };
+
   if (loading) {
     return <div className="loading"><div className="spinner"></div></div>;
   }
@@ -87,6 +129,63 @@ function InvoiceDetail() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: '0.75rem' }}>
+          {/* Notification Menu */}
+          <div style={{ position: 'relative' }}>
+            <button 
+              className="btn btn-secondary"
+              onClick={() => setShowNotifyMenu(!showNotifyMenu)}
+              disabled={notificationLoading}
+            >
+              <MessageSquare size={18} /> Notify
+            </button>
+            
+            {showNotifyMenu && (
+              <div style={{
+                position: 'absolute',
+                top: '100%',
+                right: 0,
+                marginTop: '0.5rem',
+                background: 'var(--bg-card)',
+                border: '1px solid var(--border)',
+                borderRadius: '0.5rem',
+                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                zIndex: 50,
+                width: '200px',
+                overflow: 'hidden'
+              }}>
+                <button 
+                  onClick={handleWhatsApp}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '0.75rem',
+                    width: '100%', padding: '0.75rem 1rem',
+                    textAlign: 'left', background: 'none', border: 'none',
+                    color: 'var(--text-primary)', cursor: 'pointer',
+                    borderBottom: '1px solid var(--border)'
+                  }}
+                  onMouseOver={e => e.target.style.background = 'var(--bg-secondary)'}
+                  onMouseOut={e => e.target.style.background = 'none'}
+                >
+                  <MessageSquare size={16} color="#22c55e" /> WhatsApp
+                </button>
+                <button 
+                  onClick={handleEmail}
+                  disabled={!invoice.customer_email}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '0.75rem',
+                    width: '100%', padding: '0.75rem 1rem',
+                    textAlign: 'left', background: 'none', border: 'none',
+                    color: invoice.customer_email ? 'var(--text-primary)' : 'var(--text-muted)',
+                    cursor: invoice.customer_email ? 'pointer' : 'not-allowed'
+                  }}
+                  onMouseOver={e => invoice.customer_email && (e.target.style.background = 'var(--bg-secondary)')}
+                  onMouseOut={e => e.target.style.background = 'none'}
+                >
+                  <Mail size={16} color="#3b82f6" /> Email {invoice.customer_email ? '' : '(N/A)'}
+                </button>
+              </div>
+            )}
+          </div>
+
           <button 
             className="btn btn-primary" 
             onClick={handleDownloadPdf}

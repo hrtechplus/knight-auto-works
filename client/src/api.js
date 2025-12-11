@@ -256,4 +256,6 @@ export const getTechnicianReport = (params = {}) => {
   return api.get(`/reports/technician${query ? `?${query}` : ''}`);
 };
 
+export const sendEmailNotification = (data) => api.post('/notifications/email', data);
+
 export default api;
