@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import bcrypt from 'bcryptjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dbPath = path.join(__dirname, 'knight-auto.db');
@@ -237,7 +238,42 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_reminders_status ON service_reminders(status);
   CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
   CREATE INDEX IF NOT EXISTS idx_invoices_due_date ON invoices(due_date);
+
+  -- Users table for authentication
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    name TEXT NOT NULL,
+    role TEXT DEFAULT 'staff',
+    is_active INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_login DATETIME
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 `);
+
+// Add warranty columns to jobs table if not exists
+try {
+  db.exec(`ALTER TABLE jobs ADD COLUMN warranty_until DATE`);
+} catch (e) { /* Column already exists */ }
+
+try {
+  db.exec(`ALTER TABLE jobs ADD COLUMN warranty_notes TEXT`);
+} catch (e) { /* Column already exists */ }
+
+// Create default admin user if no users exist
+
+const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
+if (userCount === 0) {
+  const defaultPassword = bcrypt.hashSync('admin123', 10);
+  db.prepare(`
+    INSERT INTO users (username, password_hash, name, role)
+    VALUES (?, ?, ?, ?)
+  `).run('admin', defaultPassword, 'Administrator', 'admin');
+  console.log('✅ Default admin user created (username: admin, password: admin123)');
+}
 
 console.log('✅ Database initialized successfully at:', dbPath);
 

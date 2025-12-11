@@ -10,18 +10,59 @@ const api = axios.create({
 });
 
 // ============================================
+// AUTH TOKEN MANAGEMENT
+// ============================================
+
+const TOKEN_KEY = 'knight_auto_token';
+const USER_KEY = 'knight_auto_user';
+
+export const getToken = () => localStorage.getItem(TOKEN_KEY);
+export const setToken = (token) => localStorage.setItem(TOKEN_KEY, token);
+export const removeToken = () => localStorage.removeItem(TOKEN_KEY);
+
+export const getStoredUser = () => {
+  const user = localStorage.getItem(USER_KEY);
+  return user ? JSON.parse(user) : null;
+};
+export const setStoredUser = (user) => localStorage.setItem(USER_KEY, JSON.stringify(user));
+export const removeStoredUser = () => localStorage.removeItem(USER_KEY);
+
+// Add auth token to all requests
+api.interceptors.request.use(
+  config => {
+    const token = getToken();
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  error => Promise.reject(error)
+);
+
+// ============================================
 // GLOBAL ERROR INTERCEPTOR
 // ============================================
 
-// Store for toast notifications (will be set by app)
 let showToast = null;
 export const setToastHandler = (handler) => { showToast = handler; };
+
+let onUnauthorized = null;
+export const setUnauthorizedHandler = (handler) => { onUnauthorized = handler; };
 
 api.interceptors.response.use(
   response => response,
   error => {
     const errorData = error.response?.data?.error;
     const message = errorData?.message || error.message || 'An unexpected error occurred';
+    
+    // Handle 401 - redirect to login
+    if (error.response?.status === 401) {
+      removeToken();
+      removeStoredUser();
+      if (onUnauthorized) {
+        onUnauthorized();
+      }
+    }
     
     // Log for debugging
     console.error('API Error:', {
@@ -31,12 +72,11 @@ api.interceptors.response.use(
       error: errorData
     });
     
-    // Show toast notification if handler is set
-    if (showToast) {
+    // Show toast notification if handler is set (skip for 401)
+    if (showToast && error.response?.status !== 401) {
       showToast(message, 'error');
     }
     
-    // Return the structured error for handling in components
     return Promise.reject({
       code: errorData?.code || 'UNKNOWN_ERROR',
       message,
@@ -45,6 +85,34 @@ api.interceptors.response.use(
     });
   }
 );
+
+// ============================================
+// AUTHENTICATION
+// ============================================
+
+export const login = async (username, password) => {
+  const response = await api.post('/auth/login', { username, password });
+  setToken(response.data.token);
+  setStoredUser(response.data.user);
+  return response.data;
+};
+
+export const logout = () => {
+  removeToken();
+  removeStoredUser();
+};
+
+export const getCurrentUser = () => api.get('/auth/me');
+export const changePassword = (currentPassword, newPassword) => 
+  api.put('/auth/password', { currentPassword, newPassword });
+
+// ============================================
+// USER MANAGEMENT (admin only)
+// ============================================
+
+export const getUsers = () => api.get('/users');
+export const createUser = (data) => api.post('/users', data);
+export const updateUser = (id, data) => api.put(`/users/${id}`, data);
 
 // ============================================
 // SYSTEM & HEALTH
@@ -147,6 +215,7 @@ export const createInvoice = (data) => api.post('/invoices', data);
 export const createInvoiceFromJob = (jobId) => api.post(`/invoices/from-job/${jobId}`);
 export const addPayment = (invoiceId, data) => api.post(`/invoices/${invoiceId}/payments`, data);
 export const getOverdueInvoices = () => api.get('/invoices/overdue');
+export const downloadInvoicePdf = (id) => `${API_BASE}/invoices/${id}/pdf?token=${getToken()}`;
 
 // ============================================
 // EXPENSES

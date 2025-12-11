@@ -3,11 +3,13 @@ import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import PDFDocument from 'pdfkit';
 import db from './database.js';
 import { 
   ErrorCodes, createError, validate, schemas, 
   canTransitionJobStatus 
 } from './validation.js';
+import { authMiddleware, setupAuthRoutes } from './auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -28,6 +30,12 @@ app.use((req, res, next) => {
   });
   next();
 });
+
+// Authentication middleware (applied to all /api routes except login and health)
+app.use('/api', authMiddleware);
+
+// Setup auth routes (login, logout, me, users)
+setupAuthRoutes(app);
 
 // ============================================
 // AUDIT LOGGING
@@ -978,6 +986,140 @@ app.post('/api/invoices/from-job/:jobId', (req, res) => {
     res.json({ id: result.lastInsertRowid, invoice_number, subtotal, total, balance: total });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// PDF Invoice Generation
+app.get('/api/invoices/:id/pdf', (req, res) => {
+  try {
+    const invoice = db.prepare(`
+      SELECT i.*, c.name as customer_name, c.phone as customer_phone, 
+             c.email as customer_email, c.address as customer_address,
+             j.job_number, j.description as job_description
+      FROM invoices i
+      JOIN customers c ON i.customer_id = c.id
+      LEFT JOIN jobs j ON i.job_id = j.id
+      WHERE i.id = ?
+    `).get(req.params.id);
+    
+    if (!invoice) {
+      return res.status(404).json(createError(ErrorCodes.NOT_FOUND, 'Invoice not found'));
+    }
+    
+    // Get job items and parts if linked to a job
+    let items = [];
+    let parts = [];
+    if (invoice.job_id) {
+      items = db.prepare('SELECT * FROM job_items WHERE job_id = ?').all(invoice.job_id);
+      parts = db.prepare('SELECT * FROM job_parts WHERE job_id = ?').all(invoice.job_id);
+    }
+    
+    // Get settings
+    const settings = db.prepare('SELECT * FROM settings').all();
+    const settingsMap = {};
+    settings.forEach(s => settingsMap[s.key] = s.value);
+    
+    const businessName = settingsMap.business_name || 'Knight Auto Works';
+    const currencySymbol = settingsMap.currency_symbol || 'Rs.';
+    
+    // Create PDF
+    const doc = new PDFDocument({ margin: 50 });
+    
+    // Set response headers
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=invoice-${invoice.invoice_number}.pdf`);
+    
+    doc.pipe(res);
+    
+    // Header
+    doc.fontSize(24).font('Helvetica-Bold').text(businessName, { align: 'center' });
+    doc.moveDown(0.5);
+    doc.fontSize(12).font('Helvetica').text('INVOICE', { align: 'center' });
+    doc.moveDown();
+    
+    // Invoice details
+    doc.fontSize(10);
+    doc.text(`Invoice Number: ${invoice.invoice_number}`);
+    doc.text(`Date: ${new Date(invoice.created_at).toLocaleDateString()}`);
+    if (invoice.due_date) {
+      doc.text(`Due Date: ${new Date(invoice.due_date).toLocaleDateString()}`);
+    }
+    if (invoice.job_number) {
+      doc.text(`Job Number: ${invoice.job_number}`);
+    }
+    doc.moveDown();
+    
+    // Customer info
+    doc.font('Helvetica-Bold').text('Bill To:');
+    doc.font('Helvetica').text(invoice.customer_name);
+    if (invoice.customer_phone) doc.text(`Phone: ${invoice.customer_phone}`);
+    if (invoice.customer_email) doc.text(`Email: ${invoice.customer_email}`);
+    if (invoice.customer_address) doc.text(invoice.customer_address);
+    doc.moveDown();
+    
+    // Line items table
+    const tableTop = doc.y;
+    const col1 = 50;
+    const col2 = 280;
+    const col3 = 350;
+    const col4 = 420;
+    const col5 = 490;
+    
+    doc.font('Helvetica-Bold');
+    doc.text('Description', col1, tableTop);
+    doc.text('Qty', col2, tableTop);
+    doc.text('Rate', col3, tableTop);
+    doc.text('Total', col4, tableTop);
+    doc.moveDown();
+    
+    doc.font('Helvetica');
+    let yPos = doc.y;
+    
+    // Add service items
+    items.forEach(item => {
+      doc.text(item.description, col1, yPos, { width: 220 });
+      doc.text(item.quantity.toString(), col2, yPos);
+      doc.text(`${currencySymbol}${item.unit_price.toFixed(2)}`, col3, yPos);
+      doc.text(`${currencySymbol}${item.total.toFixed(2)}`, col4, yPos);
+      yPos += 20;
+    });
+    
+    // Add parts
+    parts.forEach(part => {
+      doc.text(part.part_name, col1, yPos, { width: 220 });
+      doc.text(part.quantity.toString(), col2, yPos);
+      doc.text(`${currencySymbol}${part.unit_price.toFixed(2)}`, col3, yPos);
+      doc.text(`${currencySymbol}${part.total.toFixed(2)}`, col4, yPos);
+      yPos += 20;
+    });
+    
+    // Totals
+    doc.moveDown(2);
+    yPos = doc.y;
+    doc.text(`Subtotal: ${currencySymbol}${invoice.subtotal.toFixed(2)}`, 350, yPos);
+    yPos += 15;
+    if (invoice.tax_amount > 0) {
+      doc.text(`Tax (${invoice.tax_rate}%): ${currencySymbol}${invoice.tax_amount.toFixed(2)}`, 350, yPos);
+      yPos += 15;
+    }
+    if (invoice.discount > 0) {
+      doc.text(`Discount: -${currencySymbol}${invoice.discount.toFixed(2)}`, 350, yPos);
+      yPos += 15;
+    }
+    doc.font('Helvetica-Bold');
+    doc.text(`Total: ${currencySymbol}${invoice.total.toFixed(2)}`, 350, yPos);
+    yPos += 15;
+    doc.text(`Amount Paid: ${currencySymbol}${invoice.amount_paid.toFixed(2)}`, 350, yPos);
+    yPos += 15;
+    doc.text(`Balance Due: ${currencySymbol}${invoice.balance.toFixed(2)}`, 350, yPos);
+    
+    // Footer
+    doc.fontSize(8).font('Helvetica');
+    doc.text('Thank you for your business!', 50, 700, { align: 'center' });
+    
+    doc.end();
+  } catch (error) {
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
   }
 });
 
