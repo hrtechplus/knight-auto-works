@@ -72,6 +72,9 @@ app.use('/api', authMiddleware);
 // Setup PROTECTED auth routes (me, password, users) - after middleware
 setupProtectedAuthRoutes(app);
 
+// Start Backup Service
+backupService.start();
+
 // ============================================
 // AUDIT LOGGING
 // ============================================
@@ -317,7 +320,7 @@ app.put('/api/customers/:id', (req, res) => {
   }
 });
 
-app.delete('/api/customers/:id', (req, res) => {
+app.delete('/api/customers/:id', requireRole('admin'), (req, res) => {
   try {
     const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
     if (!customer) {
@@ -480,7 +483,7 @@ app.put('/api/vehicles/:id', (req, res) => {
   }
 });
 
-app.delete('/api/vehicles/:id', (req, res) => {
+app.delete('/api/vehicles/:id', requireRole('admin'), (req, res) => {
   try {
     const vehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(req.params.id);
     if (!vehicle) {
@@ -614,7 +617,7 @@ app.put('/api/jobs/:id', (req, res) => {
   }
 });
 
-app.delete('/api/jobs/:id', (req, res) => {
+app.delete('/api/jobs/:id', requireRole('admin'), (req, res) => {
   try {
     db.prepare('DELETE FROM jobs WHERE id = ?').run(req.params.id);
     res.json({ success: true });
@@ -656,7 +659,7 @@ app.post('/api/jobs/:id/items', (req, res) => {
   }
 });
 
-app.delete('/api/jobs/:jobId/items/:itemId', (req, res) => {
+app.delete('/api/jobs/:jobId/items/:itemId', requireRole('admin'), (req, res) => {
   try {
     db.prepare('DELETE FROM job_items WHERE id = ? AND job_id = ?').run(req.params.itemId, req.params.jobId);
     res.json({ success: true });
@@ -705,7 +708,7 @@ app.post('/api/jobs/:id/parts', (req, res) => {
   }
 });
 
-app.delete('/api/jobs/:jobId/parts/:partId', (req, res) => {
+app.delete('/api/jobs/:jobId/parts/:partId', requireRole('admin'), (req, res) => {
   try {
     const part = db.prepare('SELECT * FROM job_parts WHERE id = ? AND job_id = ?').get(req.params.partId, req.params.jobId);
     if (part && part.inventory_id) {
@@ -850,7 +853,7 @@ app.put('/api/inventory/:id', (req, res) => {
   }
 });
 
-app.delete('/api/inventory/:id', (req, res) => {
+app.delete('/api/inventory/:id', requireRole('admin'), (req, res) => {
   try {
     db.prepare('DELETE FROM inventory WHERE id = ?').run(req.params.id);
     res.json({ success: true });
@@ -918,7 +921,7 @@ app.put('/api/suppliers/:id', (req, res) => {
   }
 });
 
-app.delete('/api/suppliers/:id', (req, res) => {
+app.delete('/api/suppliers/:id', requireRole('admin'), (req, res) => {
   try {
     db.prepare('DELETE FROM suppliers WHERE id = ?').run(req.params.id);
     res.json({ success: true });
@@ -1445,7 +1448,7 @@ app.post('/api/expenses', (req, res) => {
   }
 });
 
-app.delete('/api/expenses/:id', (req, res) => {
+app.delete('/api/expenses/:id', requireRole('admin'), (req, res) => {
   try {
     db.prepare('DELETE FROM expenses WHERE id = ?').run(req.params.id);
     res.json({ success: true });
@@ -1684,7 +1687,7 @@ app.put('/api/service-reminders/:id', (req, res) => {
   }
 });
 
-app.delete('/api/service-reminders/:id', (req, res) => {
+app.delete('/api/service-reminders/:id', requireRole('admin'), (req, res) => {
   try {
     const reminder = db.prepare('SELECT * FROM service_reminders WHERE id = ?').get(req.params.id);
     if (reminder) {
