@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Search, X, Package, AlertTriangle } from 'lucide-react';
 import { getInventory, getSuppliers, createInventoryItem, updateInventoryItem, deleteInventoryItem, adjustStock, createSupplier } from '../api';
+import Select from '../components/Select';
 
 function Inventory() {
   const [items, setItems] = useState([]);
@@ -259,11 +260,13 @@ function Inventory() {
                   </div>
                   <div className="form-group">
                     <label className="form-label">Supplier</label>
-                    <select className="form-control" value={formData.supplier_id}
-                      onChange={(e) => setFormData({...formData, supplier_id: e.target.value})}>
-                      <option value="">Select Supplier</option>
-                      {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
+                    <Select
+                      value={formData.supplier_id}
+                      onChange={(e) => setFormData({...formData, supplier_id: e.target.value})}
+                      name="supplier_id"
+                      placeholder="Select Supplier"
+                      options={suppliers.map(s => ({ value: s.id, label: s.name }))}
+                    />
                   </div>
                 </div>
                 <div className="form-row">
@@ -325,11 +328,15 @@ function Inventory() {
                 <div className="form-row">
                   <div className="form-group">
                     <label className="form-label">Type</label>
-                    <select className="form-control" value={adjustForm.type}
-                      onChange={(e) => setAdjustForm({...adjustForm, type: e.target.value})}>
-                      <option value="in">Add Stock</option>
-                      <option value="out">Remove Stock</option>
-                    </select>
+                    <Select
+                      value={adjustForm.type}
+                      onChange={(e) => setAdjustForm({...adjustForm, type: e.target.value})}
+                      name="type"
+                      options={[
+                        { value: 'in', label: 'Add Stock' },
+                        { value: 'out', label: 'Remove Stock' }
+                      ]}
+                    />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Quantity</label>

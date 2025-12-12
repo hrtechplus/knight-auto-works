@@ -232,16 +232,17 @@ function Vehicles() {
                 <div className="form-row">
                   <div className="form-group">
                     <label className="form-label">Category (For Labor Rates)</label>
-                    <select
-                      className="form-control"
+                    <Select
                       value={formData.category}
                       onChange={(e) => setFormData({...formData, category: e.target.value})}
-                    >
-                      <option value="Asian">Asian (Toyota, Honda, etc.)</option>
-                      <option value="European">European (BMW, Benz, etc.)</option>
-                      <option value="American">American (Ford, Chev, etc.)</option>
-                      <option value="Indian">Indian (Tata, Maruti, etc.)</option>
-                    </select>
+                      name="category"
+                      options={[
+                        { value: 'Asian', label: 'Asian (Toyota, Honda, etc.)' },
+                        { value: 'European', label: 'European (BMW, Benz, etc.)' },
+                        { value: 'American', label: 'American (Ford, Chev, etc.)' },
+                        { value: 'Indian', label: 'Indian (Tata, Maruti, etc.)' }
+                      ]}
+                    />
                   </div>
                 </div>
 
@@ -302,16 +303,17 @@ function Vehicles() {
                   </div>
                   <div className="form-group">
                     <label className="form-label">Transmission</label>
-                    <select
-                      className="form-control"
+                    <Select
                       value={formData.transmission}
                       onChange={(e) => setFormData({...formData, transmission: e.target.value})}
-                    >
-                      <option value="">Select</option>
-                      <option value="Manual">Manual</option>
-                      <option value="Automatic">Automatic</option>
-                      <option value="CVT">CVT</option>
-                    </select>
+                      name="transmission"
+                      placeholder="Select Transmission"
+                      options={[
+                        { value: 'Manual', label: 'Manual' },
+                        { value: 'Automatic', label: 'Automatic' },
+                        { value: 'CVT', label: 'CVT' }
+                      ]}
+                    />
                   </div>
                 </div>
 

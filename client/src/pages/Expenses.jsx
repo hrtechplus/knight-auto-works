@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Search, X, Trash2, Receipt } from 'lucide-react';
 import { getExpenses, createExpense, deleteExpense } from '../api';
+import Select from '../components/Select';
 
 function Expenses() {
   const [expenses, setExpenses] = useState([]);
@@ -80,17 +81,18 @@ function Expenses() {
         </div>
 
         <div className="search-bar">
-          <select 
-            className="form-control" 
-            style={{ maxWidth: '200px' }}
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-          >
-            <option value="">All Categories</option>
-            {uniqueCategories.map(cat => (
-              <option key={cat} value={cat}>{cat}</option>
-            ))}
-          </select>
+          <div style={{ width: '200px' }}>
+            <Select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              name="categoryFilter"
+              placeholder="All Categories"
+              options={[
+                { value: '', label: 'All Categories' },
+                ...uniqueCategories.map(cat => ({ value: cat, label: cat }))
+              ]}
+            />
+          </div>
         </div>
 
         <div className="card">
@@ -157,11 +159,14 @@ function Expenses() {
                 <div className="form-row">
                   <div className="form-group">
                     <label className="form-label">Category *</label>
-                    <select className="form-control" value={formData.category}
-                      onChange={(e) => setFormData({...formData, category: e.target.value})} required>
-                      <option value="">Select Category</option>
-                      {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                    </select>
+                    <Select
+                      value={formData.category}
+                      onChange={(e) => setFormData({...formData, category: e.target.value})}
+                      name="category"
+                      required
+                      placeholder="Select Category"
+                      options={categories.map(cat => ({ value: cat, label: cat }))}
+                    />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Date *</label>
@@ -183,13 +188,18 @@ function Expenses() {
                   </div>
                   <div className="form-group">
                     <label className="form-label">Payment Method</label>
-                    <select className="form-control" value={formData.payment_method}
-                      onChange={(e) => setFormData({...formData, payment_method: e.target.value})}>
-                      <option value="cash">Cash</option>
-                      <option value="card">Card</option>
-                      <option value="bank_transfer">Bank Transfer</option>
-                      <option value="cheque">Cheque</option>
-                    </select>
+                    <Select
+                      value={formData.payment_method}
+                      onChange={(e) => setFormData({...formData, payment_method: e.target.value})}
+                      name="payment_method"
+                      placeholder="Select Method"
+                      options={[
+                        { value: 'cash', label: 'Cash' },
+                        { value: 'card', label: 'Card' },
+                        { value: 'bank_transfer', label: 'Bank Transfer' },
+                        { value: 'cheque', label: 'Cheque' }
+                      ]}
+                    />
                   </div>
                 </div>
                 <div className="form-group">

@@ -4,6 +4,7 @@ import { ArrowLeft, Plus, X, Trash2, Package, FileText, Check, Play, Clock, Mess
 import { getJob, updateJob, addJobItem, deleteJobItem, addJobPart, deleteJobPart, getInventory, createInvoiceFromJob, sendEmailNotification, getSettings } from '../api';
 import Breadcrumb from '../components/Breadcrumb';
 import { SkeletonCard } from '../components/Skeleton';
+import Select from '../components/Select';
 import ConfirmDialog from '../components/ConfirmDialog';
 
 function JobDetail() {
@@ -710,15 +711,15 @@ function JobDetail() {
                         onChange={(e) => setItemForm({...itemForm, discount: parseFloat(e.target.value) || 0})}
                         placeholder="0.00"
                       />
-                      <select
-                        className="form-control"
-                        style={{ width: '100px' }}
+                      <Select
                         value={itemForm.discount_type}
                         onChange={(e) => setItemForm({...itemForm, discount_type: e.target.value})}
-                      >
-                        <option value="fixed">Rs.</option>
-                        <option value="percent">%</option>
-                      </select>
+                        name="discount_type"
+                        options={[
+                          { value: 'fixed', label: 'Rs.' },
+                          { value: 'percent', label: '%' }
+                        ]}
+                      />
                     </div>
                   </div>
                   <div className="form-group">
@@ -752,18 +753,19 @@ function JobDetail() {
               <div className="modal-body">
                 <div className="form-group">
                   <label className="form-label">Select from Inventory</label>
-                  <select
-                    className="form-control"
+                  <Select
                     value={partForm.inventory_id}
                     onChange={(e) => handleInventorySelect(e.target.value)}
-                  >
-                    <option value="">-- Custom Part --</option>
-                    {inventory.filter(i => i.quantity > 0).map(i => (
-                      <option key={i.id} value={i.id}>
-                        {i.name} (Stock: {i.quantity}) - Rs. {i.sell_price}
-                      </option>
-                    ))}
-                  </select>
+                    name="inventory_id"
+                    placeholder="-- Custom Part --"
+                    options={[
+                      { value: '', label: '-- Custom Part --' },
+                      ...inventory.filter(i => i.quantity > 0).map(i => ({
+                        value: i.id,
+                        label: `${i.name} (Stock: ${i.quantity}) - Rs. ${i.sell_price}`
+                      }))
+                    ]}
+                  />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Part Name *</label>

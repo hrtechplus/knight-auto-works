@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, X, Printer, DollarSign, Download, MessageSquare, Mail } from 'lucide-react';
 import { getInvoice, addPayment, downloadInvoicePdf, sendEmailNotification } from '../api';
+import Select from '../components/Select';
 
 function InvoiceDetail() {
   const { id } = useParams();
@@ -393,13 +394,18 @@ function InvoiceDetail() {
                   </div>
                   <div className="form-group">
                     <label className="form-label">Payment Method</label>
-                    <select className="form-control" value={paymentForm.payment_method}
-                      onChange={(e) => setPaymentForm({...paymentForm, payment_method: e.target.value})}>
-                      <option value="cash">Cash</option>
-                      <option value="card">Card</option>
-                      <option value="bank_transfer">Bank Transfer</option>
-                      <option value="cheque">Cheque</option>
-                    </select>
+                    <Select
+                      value={paymentForm.payment_method}
+                      onChange={(e) => setPaymentForm({...paymentForm, payment_method: e.target.value})}
+                      name="payment_method"
+                      placeholder="Select Method"
+                      options={[
+                        { value: 'cash', label: 'Cash' },
+                        { value: 'card', label: 'Card' },
+                        { value: 'bank_transfer', label: 'Bank Transfer' },
+                        { value: 'cheque', label: 'Cheque' }
+                      ]}
+                    />
                   </div>
                 </div>
                 <div className="form-group">

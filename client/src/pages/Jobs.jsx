@@ -4,6 +4,7 @@ import { Plus, Search, X, Wrench, Filter } from 'lucide-react';
 import { getJobs, getVehicles, createJob } from '../api';
 import { useToast, ToastContainer } from '../components/Toast';
 import { SkeletonTable } from '../components/Skeleton';
+import Select from '../components/Select';
 
 function Jobs() {
   const [jobs, setJobs] = useState([]);
@@ -179,20 +180,18 @@ function Jobs() {
             <form onSubmit={handleSubmit}>
               <div className="modal-body">
                 <div className="form-group">
-                  <label className="form-label">Vehicle *</label>
-                  <select
-                    className="form-control"
+                  <Select
+                    label="Vehicle"
+                    required
                     value={formData.vehicle_id}
                     onChange={(e) => setFormData({...formData, vehicle_id: e.target.value})}
-                    required
-                  >
-                    <option value="">Select Vehicle</option>
-                    {vehicles.map(v => (
-                      <option key={v.id} value={v.id}>
-                        {v.plate_number} - {v.make} {v.model} ({v.customer_name})
-                      </option>
-                    ))}
-                  </select>
+                    name="vehicle_id"
+                    placeholder="Select Vehicle"
+                    options={vehicles.map(v => ({ 
+                      value: v.id, 
+                      label: `${v.plate_number} - ${v.make} ${v.model} (${v.customer_name})` 
+                    }))}
+                  />
                 </div>
                 
                 <div className="form-group">
@@ -209,16 +208,17 @@ function Jobs() {
                 <div className="form-row">
                   <div className="form-group">
                     <label className="form-label">Priority</label>
-                    <select
-                      className="form-control"
+                    <Select
                       value={formData.priority}
                       onChange={(e) => setFormData({...formData, priority: e.target.value})}
-                    >
-                      <option value="low">Low</option>
-                      <option value="normal">Normal</option>
-                      <option value="high">High</option>
-                      <option value="urgent">Urgent</option>
-                    </select>
+                      name="priority"
+                      options={[
+                        { value: 'low', label: 'Low' },
+                        { value: 'normal', label: 'Normal' },
+                        { value: 'high', label: 'High' },
+                        { value: 'urgent', label: 'Urgent' }
+                      ]}
+                    />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Technician</label>
