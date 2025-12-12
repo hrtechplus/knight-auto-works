@@ -1,15 +1,19 @@
 import { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Check } from 'lucide-react';
+import { ChevronDown, Check, Search } from 'lucide-react';
 
 function Select({ label, value, onChange, options = [], placeholder = 'Select...', required = false, name }) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef(null);
+
+  const [searchTerm, setSearchTerm] = useState('');
+  const searchInputRef = useRef(null);
 
   // Close when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (containerRef.current && !containerRef.current.contains(event.target)) {
         setIsOpen(false);
+        setSearchTerm(''); // Reset search on close
       }
     };
 
@@ -17,11 +21,23 @@ function Select({ label, value, onChange, options = [], placeholder = 'Select...
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Auto-focus search input when opened
+  useEffect(() => {
+    if (isOpen && searchInputRef.current) {
+      searchInputRef.current.focus();
+    }
+  }, [isOpen]);
+
   const selectedOption = options.find(opt => opt.value === value);
+  
+  const filteredOptions = options.filter(opt => 
+    opt.label.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   const handleSelect = (optionValue) => {
     onChange({ target: { name, value: optionValue } });
     setIsOpen(false);
+    setSearchTerm('');
   };
 
   return (
@@ -40,20 +56,34 @@ function Select({ label, value, onChange, options = [], placeholder = 'Select...
 
       {isOpen && (
         <div className="custom-select-menu">
-          {options.length > 0 ? (
-            options.map((option) => (
-              <div
-                key={option.value}
-                className={`custom-select-option ${value === option.value ? 'selected' : ''}`}
-                onClick={() => handleSelect(option.value)}
-              >
-                {option.label}
-                {value === option.value && <Check size={16} className="check-icon" />}
-              </div>
-            ))
-          ) : (
-            <div className="custom-select-empty">No options</div>
-          )}
+          <div className="custom-select-search">
+            <Search size={16} className="search-icon" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Search..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+          
+          <div className="custom-select-options">
+            {filteredOptions.length > 0 ? (
+              filteredOptions.map((option) => (
+                <div
+                  key={option.value}
+                  className={`custom-select-option ${value === option.value ? 'selected' : ''}`}
+                  onClick={() => handleSelect(option.value)}
+                >
+                  {option.label}
+                  {value === option.value && <Check size={16} className="check-icon" />}
+                </div>
+              ))
+            ) : (
+              <div className="custom-select-empty">No results found</div>
+            )}
+          </div>
         </div>
       )}
     </div>

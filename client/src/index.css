@@ -1859,11 +1859,44 @@ select.form-control {
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
   z-index: 1000;
-  max-height: 250px;
-  overflow-y: auto;
-  padding: 0.5rem;
+  max-height: 300px;
+  overflow: hidden;
+  padding: 0;
   animation: slideInDown 0.2s ease-out;
   backdrop-filter: blur(12px);
+  display: flex;
+  flex-direction: column;
+}
+
+.custom-select-search {
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg-secondary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.custom-select-search .search-icon {
+  color: var(--text-muted);
+}
+
+.custom-select-search input {
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  outline: none;
+  padding: 0.25rem 0;
+}
+
+.custom-select-options {
+  overflow-y: auto;
+  padding: 0.5rem;
+  max-height: 250px;
 }
 
 @keyframes slideInDown {
