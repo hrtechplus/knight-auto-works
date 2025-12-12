@@ -642,6 +642,9 @@ app.delete('/api/jobs/:id', (req, res) => {
 // Job Items (Services)
 app.post('/api/jobs/:id/items', (req, res) => {
   try {
+    const errors = validate(req.body, schemas.jobItem);
+    if (errors) return res.status(400).json(createError(ErrorCodes.VALIDATION_ERROR, 'Validation failed', errors));
+
     const { description, quantity, unit_price, discount, discount_type } = req.body;
     
     // Calculate total: (Qty * Rate) - Discount
@@ -681,6 +684,9 @@ app.delete('/api/jobs/:jobId/items/:itemId', (req, res) => {
 // Job Parts
 app.post('/api/jobs/:id/parts', (req, res) => {
   try {
+    const errors = validate(req.body, schemas.jobPart);
+    if (errors) return res.status(400).json(createError(ErrorCodes.VALIDATION_ERROR, 'Validation failed', errors));
+
     const result = db.transaction(() => {
       const { inventory_id, part_name, quantity, unit_price } = req.body;
       const total = (quantity || 1) * (unit_price || 0);
@@ -809,6 +815,9 @@ app.get('/api/inventory/:id', (req, res) => {
 
 app.post('/api/inventory', (req, res) => {
   try {
+    const errors = validate(req.body, schemas.inventory);
+    if (errors) return res.status(400).json(createError(ErrorCodes.VALIDATION_ERROR, 'Validation failed', errors));
+
     const result = db.transaction(() => {
       const { sku, name, description, category, quantity, min_stock, cost_price, sell_price, supplier_id, location } = req.body;
       const insertResult = db.prepare(`

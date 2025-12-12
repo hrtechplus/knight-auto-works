@@ -185,6 +185,19 @@ export const schemas = {
     reminder_type: [v => validators.required(v, 'Reminder type'), v => validators.enum(v, ['mileage', 'time', 'custom'], 'Reminder type')],
     due_mileage: [v => validators.positiveNumber(v, 'Due mileage')],
     due_date: [v => validators.date(v, 'Due date')]
+  },
+  
+  jobItem: {
+    description: [v => validators.required(v, 'Description'), v => validators.minLength(v, 2, 'Description')],
+    quantity: [v => validators.positiveNumber(v, 'Quantity')],
+    unit_price: [v => validators.positiveNumber(v, 'Unit price')]
+  },
+
+  jobPart: {
+    part_name: [v => validators.required(v, 'Part name')],
+    quantity: [v => validators.positiveNumber(v, 'Quantity')],
+    unit_price: [v => validators.positiveNumber(v, 'Unit price')],
+    inventory_id: [v => validators.integer(v, 'Inventory ID')]
   }
 };
 
