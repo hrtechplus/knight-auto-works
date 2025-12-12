@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, X, Trash2, Package, FileText, Check, Play, Clock, MessageSquare, Mail } from 'lucide-react';
-import { getJob, updateJob, addJobItem, deleteJobItem, addJobPart, deleteJobPart, getInventory, createInvoiceFromJob, sendEmailNotification } from '../api';
+import { getJob, updateJob, addJobItem, deleteJobItem, addJobPart, deleteJobPart, getInventory, createInvoiceFromJob, sendEmailNotification, getSettings } from '../api';
 import Breadcrumb from '../components/Breadcrumb';
 import { SkeletonCard } from '../components/Skeleton';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -16,7 +16,8 @@ function JobDetail() {
   const [showPartModal, setShowPartModal] = useState(false);
   const [notificationLoading, setNotificationLoading] = useState(false);
   const [showNotifyMenu, setShowNotifyMenu] = useState(false);
-  const [itemForm, setItemForm] = useState({ description: '', quantity: 1, unit_price: 0 });
+  const [itemForm, setItemForm] = useState({ description: '', quantity: 1, unit_price: 0, discount: 0, discount_type: 'fixed' });
+  const [settings, setSettings] = useState({});
   const [partForm, setPartForm] = useState({ inventory_id: '', part_name: '', quantity: 1, unit_price: 0 });
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState({});
@@ -35,12 +36,14 @@ function JobDetail() {
 
   const loadData = async () => {
     try {
-      const [jobRes, invRes] = await Promise.all([
+      const [jobRes, invRes, settingsRes] = await Promise.all([
         getJob(id),
-        getInventory()
+        getInventory(),
+        getSettings()
       ]);
       setJob(jobRes.data);
       setInventory(invRes.data);
+      setSettings(settingsRes.data || {});
       setEditForm({
         status: jobRes.data.status,
         technician: jobRes.data.technician || '',
@@ -61,7 +64,7 @@ function JobDetail() {
     try {
       await addJobItem(id, itemForm);
       setShowItemModal(false);
-      setItemForm({ description: '', quantity: 1, unit_price: 0 });
+      setItemForm({ description: '', quantity: 1, unit_price: 0, discount: 0, discount_type: 'fixed' });
       loadData();
     } catch (error) {
       alert('Failed to add service');
@@ -97,6 +100,26 @@ function JobDetail() {
       alert('Failed to add part');
     }
   };
+
+  // Auto-set pricing when modal opens
+  useEffect(() => {
+    if (showItemModal && job && Object.keys(settings).length > 0) {
+      // Only set defaults if form is empty (fresh open)
+      if (!itemForm.description) {
+        const category = job.vehicle_category || 'Asian';
+        const rateKey = `labor_rate_${category.toLowerCase()}`;
+        const hourlyRate = parseFloat(settings[rateKey]) || 1500;
+        
+        setItemForm(prev => ({
+          ...prev,
+          quantity: 0.083, // 5 mins default
+          unit_price: hourlyRate,
+          discount: 0,
+          discount_type: 'fixed'
+        }));
+      }
+    }
+  }, [showItemModal, job, settings]);
 
   const handleDeletePart = async (partId) => {
     setConfirmDialog({
@@ -667,6 +690,35 @@ function JobDetail() {
                       value={itemForm.unit_price}
                       onChange={(e) => setItemForm({...itemForm, unit_price: parseFloat(e.target.value) || 0})}
                     />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Discount</label>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <input
+                        type="number"
+                        className="form-control"
+                        value={itemForm.discount}
+                        onChange={(e) => setItemForm({...itemForm, discount: parseFloat(e.target.value) || 0})}
+                        placeholder="0.00"
+                      />
+                      <select
+                        className="form-control"
+                        style={{ width: '100px' }}
+                        value={itemForm.discount_type}
+                        onChange={(e) => setItemForm({...itemForm, discount_type: e.target.value})}
+                      >
+                        <option value="fixed">Rs.</option>
+                        <option value="percent">%</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Net Total</label>
+                    <div className="form-control" style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
+                      Rs. {Math.max(0, (itemForm.quantity * itemForm.unit_price) - (itemForm.discount_type === 'percent' ? (itemForm.quantity * itemForm.unit_price * itemForm.discount / 100) : itemForm.discount)).toFixed(2)}
+                    </div>
                   </div>
                 </div>
               </div>

@@ -12,7 +12,8 @@ function Vehicles() {
   const [editingVehicle, setEditingVehicle] = useState(null);
   const [formData, setFormData] = useState({
     customer_id: '', plate_number: '', make: '', model: '', year: '',
-    vin: '', color: '', engine_type: '', transmission: '', odometer: '', notes: ''
+    vin: '', color: '', engine_type: '', transmission: '', odometer: '', notes: '',
+    category: 'Asian'
   });
 
   useEffect(() => {
@@ -54,7 +55,8 @@ function Vehicles() {
   const resetForm = () => {
     setFormData({
       customer_id: '', plate_number: '', make: '', model: '', year: '',
-      vin: '', color: '', engine_type: '', transmission: '', odometer: '', notes: ''
+      vin: '', color: '', engine_type: '', transmission: '', odometer: '', notes: '',
+      category: 'Asian'
     });
   };
 
@@ -71,7 +73,8 @@ function Vehicles() {
       engine_type: vehicle.engine_type || '',
       transmission: vehicle.transmission || '',
       odometer: vehicle.odometer || '',
-      notes: vehicle.notes || ''
+      notes: vehicle.notes || '',
+      category: vehicle.category || 'Asian'
     });
     setShowModal(true);
   };
@@ -225,6 +228,22 @@ function Vehicles() {
                       onChange={(e) => setFormData({...formData, vin: e.target.value})}
                       placeholder="Vehicle Identification Number"
                     />
+                  </div>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Category (For Labor Rates)</label>
+                    <select
+                      className="form-control"
+                      value={formData.category}
+                      onChange={(e) => setFormData({...formData, category: e.target.value})}
+                    >
+                      <option value="Asian">Asian (Toyota, Honda, etc.)</option>
+                      <option value="European">European (BMW, Benz, etc.)</option>
+                      <option value="American">American (Ford, Chev, etc.)</option>
+                      <option value="Indian">Indian (Tata, Maruti, etc.)</option>
+                    </select>
                   </div>
                 </div>
 

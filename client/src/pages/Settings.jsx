@@ -97,15 +97,47 @@ function Settings() {
               <h3 className="card-title">Pricing & Tax</h3>
             </div>
             <div className="card-body">
-              <div className="form-group">
-                <label className="form-label">Default Labor Rate (Rs. per hour)</label>
-                <input
-                  type="number"
-                  className="form-control"
-                  value={settings.labor_rate || ''}
-                  onChange={(e) => setSettings({...settings, labor_rate: e.target.value})}
-                />
-              </div>
+                <label className="form-label" style={{ marginBottom: '1rem', display: 'block' }}>Labor Rates (Rs. per hour)</label>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Asian (Toyota, Honda)</label>
+                    <input
+                      type="number"
+                      className="form-control"
+                      value={settings.labor_rate_asian || '1500'}
+                      onChange={(e) => setSettings({...settings, labor_rate_asian: e.target.value})}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">European (BMW, Benz)</label>
+                    <input
+                      type="number"
+                      className="form-control"
+                      value={settings.labor_rate_european || '2500'}
+                      onChange={(e) => setSettings({...settings, labor_rate_european: e.target.value})}
+                    />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">American (Ford, Jeep)</label>
+                    <input
+                      type="number"
+                      className="form-control"
+                      value={settings.labor_rate_american || '2000'}
+                      onChange={(e) => setSettings({...settings, labor_rate_american: e.target.value})}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Indian (Tata, Maruti)</label>
+                    <input
+                      type="number"
+                      className="form-control"
+                      value={settings.labor_rate_indian || '1200'}
+                      onChange={(e) => setSettings({...settings, labor_rate_indian: e.target.value})}
+                    />
+                  </div>
+                </div>
               <div className="form-group">
                 <label className="form-label">Tax Rate (%)</label>
                 <input

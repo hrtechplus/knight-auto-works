@@ -530,7 +530,7 @@ app.get('/api/jobs', (req, res) => {
 app.get('/api/jobs/:id', (req, res) => {
   try {
     const job = db.prepare(`
-      SELECT j.*, v.plate_number, v.make, v.model, v.year, v.color, v.odometer as vehicle_odometer,
+      SELECT j.*, v.plate_number, v.make, v.model, v.year, v.color, v.odometer as vehicle_odometer, v.category as vehicle_category,
              c.id as customer_id, c.name as customer_name, c.phone as customer_phone, c.email as customer_email
       FROM jobs j
       JOIN vehicles v ON j.vehicle_id = v.id
@@ -611,12 +611,27 @@ app.delete('/api/jobs/:id', (req, res) => {
 // Job Items (Services)
 app.post('/api/jobs/:id/items', (req, res) => {
   try {
-    const { description, quantity, unit_price } = req.body;
-    const total = (quantity || 1) * (unit_price || 0);
+    const { description, quantity, unit_price, discount, discount_type } = req.body;
+    
+    // Calculate total: (Qty * Rate) - Discount
+    let subtotal = (quantity || 1) * (unit_price || 0);
+    let discountAmount = 0;
+    
+    if (discount && discount > 0) {
+      if (discount_type === 'percent') {
+        discountAmount = subtotal * (discount / 100);
+      } else {
+        discountAmount = discount;
+      }
+    }
+    
+    const total = Math.max(0, subtotal - discountAmount);
+    
     const result = db.prepare(`
-      INSERT INTO job_items (job_id, description, quantity, unit_price, total)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(req.params.id, description, quantity || 1, unit_price || 0, total);
+      INSERT INTO job_items (job_id, description, quantity, unit_price, total, discount, discount_type)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(req.params.id, description, quantity || 1, unit_price || 0, total, discount || 0, discount_type || 'fixed');
+    
     res.json({ id: result.lastInsertRowid, ...req.body, total });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1128,47 +1143,59 @@ app.get('/api/invoices/:id/pdf', (req, res) => {
       doc.fillColor(darkColor).text(`${invoice.plate_number} - ${invoice.make} ${invoice.model}`, valuesX, detailY);
     }
     
-    // ========== LINE ITEMS TABLE ==========
-    yPos = 250;
+    // Line Items Table
+    yPos = 310;
     
-    // Table header
+    const tableTop = 310;
     const tableLeft = 50;
-    const tableRight = 545;
+    const tableRight = 550;
     const colDesc = 50;
-    const colQty = 330;
-    const colRate = 400;
-    const colTotal = 480;
+    const colQty = 320;
+    const colRate = 380;
+    const colTotal = 460;
     
-    // Header background
-    doc.rect(tableLeft, yPos, tableRight - tableLeft, 22).fill(primaryColor);
+    // Header
+    doc.fillColor(primaryColor).rect(tableLeft, yPos, tableRight - tableLeft, 20).fill();
+    doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(10);
+    doc.text('DESCRIPTION', colDesc + 10, yPos + 5);
+    doc.text('QTY', colQty, yPos + 5, { width: 50, align: 'center' });
+    doc.text('RATE', colRate, yPos + 5, { width: 60, align: 'right' });
+    doc.text('TOTAL', colTotal, yPos + 5, { width: 80, align: 'right' });
     
-    doc.font('Helvetica-Bold').fontSize(9).fillColor('white');
-    doc.text('DESCRIPTION', colDesc + 10, yPos + 6);
-    doc.text('QTY', colQty, yPos + 6, { width: 50, align: 'center' });
-    doc.text('RATE', colRate, yPos + 6, { width: 60, align: 'right' });
-    doc.text('TOTAL', colTotal, yPos + 6, { width: 55, align: 'right' });
+    yPos += 20;
+    let itemIndex = 0;
+    // const lightGray = '#f9fafb'; // Already defined above
     
-    yPos += 22;
-    let rowIndex = 0;
-    
-    // Add service items
+    // Job Items
     items.forEach(item => {
-      const rowHeight = 20;
-      // Alternate row background
-      if (rowIndex % 2 === 0) {
-        doc.rect(tableLeft, yPos, tableRight - tableLeft, rowHeight).fill(lightGray);
+      const rowHeight = 24; 
+      if (itemIndex % 2 === 0) {
+        doc.rect(tableLeft, yPos, tableRight - tableLeft, rowHeight).fill('#f9fafb');
       }
       
       doc.font('Helvetica').fontSize(9).fillColor(darkColor);
-      doc.text(item.description, colDesc + 10, yPos + 5, { width: 260 });
+      
+      // Description with Discount text if applicable
+      let desc = item.description;
+      if (item.discount > 0) {
+        const discountText = item.discount_type === 'percent' 
+          ? `(${item.discount}% off)` 
+          : `(-${currencySymbol}${item.discount})`;
+        doc.text(desc, colDesc + 10, yPos + 5, { width: 260, continued: true });
+        doc.fillColor('green').fontSize(8).text(` ${discountText}`);
+        doc.fillColor(darkColor).fontSize(9); // Reset
+      } else {
+        doc.text(desc, colDesc + 10, yPos + 5, { width: 260 });
+      }
+
       doc.text(item.quantity.toString(), colQty, yPos + 5, { width: 50, align: 'center' });
       doc.text(`${currencySymbol}${item.unit_price.toFixed(2)}`, colRate, yPos + 5, { width: 60, align: 'right' });
-      doc.font('Helvetica-Bold').text(`${currencySymbol}${item.total.toFixed(2)}`, colTotal, yPos + 5, { width: 55, align: 'right' });
+      doc.text(`${currencySymbol}${item.total.toFixed(2)}`, colTotal, yPos + 5, { width: 80, align: 'right' });
       
       yPos += rowHeight;
-      rowIndex++;
+      itemIndex++;
     });
-    
+
     // Add parts with "Parts:" label
     if (parts.length > 0) {
       doc.rect(tableLeft, yPos, tableRight - tableLeft, 18).fill('#fff7ed');
@@ -1177,6 +1204,11 @@ app.get('/api/invoices/:id/pdf', (req, res) => {
       yPos += 18;
     }
     
+
+    
+    let rowIndex = 0;
+    // const lightGray = '#f9fafb';
+
     parts.forEach(part => {
       const rowHeight = 20;
       if (rowIndex % 2 === 0) {

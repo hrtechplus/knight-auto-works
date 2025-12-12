@@ -263,6 +263,26 @@ try {
   db.exec(`ALTER TABLE jobs ADD COLUMN warranty_notes TEXT`);
 } catch (e) { /* Column already exists */ }
 
+// Smart Pricing Migrations
+try {
+  db.exec(`ALTER TABLE vehicles ADD COLUMN category TEXT DEFAULT 'Asian'`);
+} catch (e) { /* Column already exists */ }
+
+try {
+  db.exec(`ALTER TABLE job_items ADD COLUMN discount REAL DEFAULT 0`);
+  db.exec(`ALTER TABLE job_items ADD COLUMN discount_type TEXT DEFAULT 'fixed'`); // 'fixed' or 'percent'
+} catch (e) { /* Column already exists */ }
+
+// Seed default category rates if not exist
+const settings = db.prepare('SELECT key FROM settings').all().map(s => s.key);
+if (!settings.includes('labor_rate_asian')) {
+  const insert = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)');
+  insert.run('labor_rate_asian', '1500');
+  insert.run('labor_rate_european', '2500');
+  insert.run('labor_rate_american', '2000');
+  insert.run('labor_rate_indian', '1200');
+}
+
 // Create default admin user if no users exist
 
 const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
