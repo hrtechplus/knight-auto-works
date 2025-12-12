@@ -6,9 +6,15 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import db from './database.js';
 import { createError, ErrorCodes } from './validation.js';
+import { auditLog } from './audit.js';
 
 // Secret key for JWT (in production, use environment variable)
+// Secret key for JWT
 const JWT_SECRET = process.env.JWT_SECRET || 'knight-auto-works-secret-key-change-in-production';
+
+if (process.env.NODE_ENV === 'production' && JWT_SECRET === 'knight-auto-works-secret-key-change-in-production') {
+  console.error('CRITICAL WARNING: Using default insecure JWT secret in production!');
+}
 const JWT_EXPIRES_IN = '24h';
 
 // ============================================
@@ -189,10 +195,10 @@ export function setupProtectedAuthRoutes(app) {
         ));
       }
       
-      if (newPassword.length < 6) {
+      if (newPassword.length < 8) {
         return res.status(400).json(createError(
           ErrorCodes.VALIDATION_ERROR,
-          'New password must be at least 6 characters'
+          'New password must be at least 8 characters'
         ));
       }
       
@@ -238,6 +244,13 @@ export function setupProtectedAuthRoutes(app) {
           'Username, password, and name are required'
         ));
       }
+
+      if (password.length < 8) {
+        return res.status(400).json(createError(
+          ErrorCodes.VALIDATION_ERROR,
+          'Password must be at least 8 characters'
+        ));
+      }
       
       const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
       if (existing) {
@@ -252,6 +265,9 @@ export function setupProtectedAuthRoutes(app) {
         INSERT INTO users (username, password_hash, name, role)
         VALUES (?, ?, ?, ?)
       `).run(username, passwordHash, name, role || 'staff');
+      
+      const newUser = { id: result.lastInsertRowid, username, name, role: role || 'staff' };
+      auditLog('users', result.lastInsertRowid, 'create', null, newUser);
       
       res.json({
         id: result.lastInsertRowid,
@@ -288,6 +304,9 @@ export function setupProtectedAuthRoutes(app) {
         is_active !== undefined ? is_active : user.is_active,
         userId
       );
+      
+      const updatedUser = { id: userId, name: name || user.name, role: role || user.role, is_active: is_active !== undefined ? is_active : user.is_active };
+      auditLog('users', userId, 'update', user, updatedUser);
       
       res.json({ success: true });
     } catch (error) {

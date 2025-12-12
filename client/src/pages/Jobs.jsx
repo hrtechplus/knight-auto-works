@@ -9,9 +9,10 @@ import Select from '../components/Select';
 function Jobs() {
   const [jobs, setJobs] = useState([]);
   const [vehicles, setVehicles] = useState([]);
+  const [vehiclesLoading, setVehiclesLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [filter, setFilter] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [formData, setFormData] = useState({
     vehicle_id: '', description: '', priority: 'normal', technician: '', odometer_in: ''

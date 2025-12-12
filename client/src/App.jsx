@@ -19,6 +19,7 @@ import Reports from './pages/Reports';
 import SettingsPage from './pages/Settings';
 import Login from './pages/Login';
 import { getStoredUser, logout, setUnauthorizedHandler } from './api';
+import ProtectedRoute from './components/ProtectedRoute';
 import './index.css';
 
 function AppContent({ user, onLogout }) {
@@ -95,19 +96,23 @@ function AppContent({ user, onLogout }) {
               <Receipt size={20} />
               Expenses
             </NavLink>
-            <NavLink to="/reports" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
-              <TrendingUp size={20} />
-              Reports
-            </NavLink>
+            {user?.role === 'admin' && (
+              <NavLink to="/reports" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+                <TrendingUp size={20} />
+                Reports
+              </NavLink>
+            )}
           </div>
           
-          <div className="nav-section">
-            <div className="nav-section-title">System</div>
-            <NavLink to="/settings" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
-              <Settings size={20} />
-              Settings
-            </NavLink>
-          </div>
+          {user?.role === 'admin' && (
+            <div className="nav-section">
+              <div className="nav-section-title">System</div>
+              <NavLink to="/settings" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+                <Settings size={20} />
+                Settings
+              </NavLink>
+            </div>
+          )}
         </nav>
 
         {/* User info and logout */}
@@ -167,8 +172,16 @@ function AppContent({ user, onLogout }) {
           <Route path="/invoices" element={<Invoices />} />
           <Route path="/invoices/:id" element={<InvoiceDetail />} />
           <Route path="/expenses" element={<Expenses />} />
-          <Route path="/reports" element={<Reports />} />
-          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/reports" element={
+            <ProtectedRoute roles={['admin']}>
+              <Reports />
+            </ProtectedRoute>
+          } />
+          <Route path="/settings" element={
+            <ProtectedRoute roles={['admin']}>
+              <SettingsPage />
+            </ProtectedRoute>
+          } />
         </Routes>
       </main>
     </div>

@@ -11,7 +11,8 @@ import {
   ErrorCodes, createError, validate, schemas, 
   canTransitionJobStatus 
 } from './validation.js';
-import { authMiddleware, setupPublicAuthRoutes, setupProtectedAuthRoutes } from './auth.js';
+import { authMiddleware, setupPublicAuthRoutes, setupProtectedAuthRoutes, requireRole } from './auth.js';
+import { auditLog } from './audit.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -74,23 +75,6 @@ setupProtectedAuthRoutes(app);
 // ============================================
 // AUDIT LOGGING
 // ============================================
-
-function auditLog(tableName, recordId, action, oldData = null, newData = null) {
-  try {
-    db.prepare(`
-      INSERT INTO audit_log (table_name, record_id, action, old_data, new_data)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(
-      tableName, 
-      recordId, 
-      action, 
-      oldData ? JSON.stringify(oldData) : null,
-      newData ? JSON.stringify(newData) : null
-    );
-  } catch (error) {
-    console.error('Audit log error:', error.message);
-  }
-}
 
 // ============================================
 // UTILITY FUNCTIONS
@@ -219,7 +203,7 @@ app.get('/api/settings', (req, res) => {
   }
 });
 
-app.put('/api/settings', (req, res) => {
+app.put('/api/settings', requireRole('admin'), (req, res) => {
   try {
     const stmt = db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)');
     const transaction = db.transaction((settings) => {
@@ -1474,7 +1458,7 @@ app.delete('/api/expenses/:id', (req, res) => {
 // REPORTS ROUTES
 // ============================================
 
-app.get('/api/reports/revenue', (req, res) => {
+app.get('/api/reports/revenue', requireRole('admin'), (req, res) => {
   try {
     const { period } = req.query; // daily, weekly, monthly
     let groupBy, dateFormat;
@@ -1507,7 +1491,7 @@ app.get('/api/reports/revenue', (req, res) => {
   }
 });
 
-app.get('/api/reports/summary', (req, res) => {
+app.get('/api/reports/summary', requireRole('admin'), (req, res) => {
   try {
     const { start_date, end_date } = req.query;
     const start = start_date || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
