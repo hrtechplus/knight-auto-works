@@ -8,6 +8,7 @@ function Vehicles() {
   const [vehicles, setVehicles] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [customersLoading, setCustomersLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingVehicle, setEditingVehicle] = useState(null);
@@ -25,7 +26,7 @@ function Vehicles() {
     try {
       const [vehiclesRes, customersRes] = await Promise.all([
         getVehicles({ search: searchTerm }),
-        getCustomers()
+        getCustomers() // Initial load
       ]);
       setVehicles(vehiclesRes.data);
       setCustomers(customersRes.data);
@@ -33,6 +34,18 @@ function Vehicles() {
       console.error('Failed to load data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCustomerSearch = async (term) => {
+    try {
+      setCustomersLoading(true);
+      const res = await getCustomers({ search: term });
+      setCustomers(res.data);
+    } catch (error) {
+      console.error('Failed to search customers:', error);
+    } finally {
+      setCustomersLoading(false);
     }
   };
 
@@ -195,12 +208,13 @@ function Vehicles() {
               <div className="modal-body">
                 <div className="form-group">
                   <Select
-                    label="Owner"
-                    required
                     value={formData.customer_id}
                     onChange={(e) => setFormData({...formData, customer_id: e.target.value})}
                     name="customer_id"
-                    placeholder="Select Customer"
+                    required
+                    placeholder="Search Owner (Name, Phone, Email...)"
+                    onSearch={handleCustomerSearch}
+                    isLoading={customersLoading}
                     options={customers.map(c => ({ value: c.id, label: c.name }))}
                   />
                 </div>

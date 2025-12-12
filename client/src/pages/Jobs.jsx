@@ -21,20 +21,18 @@ function Jobs() {
 
   useEffect(() => {
     loadData();
-  }, [searchTerm, statusFilter]);
+  }, [searchTerm, filter]); // Updated dependency array
 
   const loadData = async () => {
-    // Only show full loading skeleton on initial load or clear filter
-    if (jobs.length === 0) setLoading(true);
-    
     try {
+      setLoading(true); // Always set loading to true when data is being loaded
       const params = {};
       if (searchTerm) params.search = searchTerm;
-      if (statusFilter) params.status = statusFilter;
+      if (filter) params.status = filter; // Use 'filter' instead of 'statusFilter'
       
       const [jobsRes, vehiclesRes] = await Promise.all([
         getJobs(params),
-        getVehicles()
+        getVehicles() // Initial load of vehicles without search
       ]);
       setJobs(jobsRes.data);
       setVehicles(vehiclesRes.data);
@@ -43,6 +41,18 @@ function Jobs() {
       addToast('Failed to load jobs data', 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleVehicleSearch = async (term) => {
+    try {
+      setVehiclesLoading(true);
+      const res = await getVehicles({ search: term });
+      setVehicles(res.data);
+    } catch (error) {
+      console.error('Failed to search vehicles:', error);
+    } finally {
+      setVehiclesLoading(false);
     }
   };
 
@@ -88,16 +98,16 @@ function Jobs() {
           </div>
           <div className="tabs">
             <button 
-              className={`tab ${statusFilter === '' ? 'active' : ''}`}
-              onClick={() => setStatusFilter('')}
+              className={`tab ${filter === '' ? 'active' : ''}`}
+              onClick={() => setFilter('')}
             >
               All
             </button>
             {statuses.map(status => (
               <button 
                 key={status}
-                className={`tab ${statusFilter === status ? 'active' : ''}`}
-                onClick={() => setStatusFilter(status)}
+                className={`tab ${filter === status ? 'active' : ''}`}
+                onClick={() => setFilter(status)}
               >
                 {status.replace('_', ' ')}
               </button>
@@ -181,15 +191,16 @@ function Jobs() {
               <div className="modal-body">
                 <div className="form-group">
                   <Select
-                    label="Vehicle"
-                    required
                     value={formData.vehicle_id}
                     onChange={(e) => setFormData({...formData, vehicle_id: e.target.value})}
                     name="vehicle_id"
-                    placeholder="Select Vehicle"
-                    options={vehicles.map(v => ({ 
-                      value: v.id, 
-                      label: `${v.plate_number} - ${v.make} ${v.model} (${v.customer_name})` 
+                    required
+                    placeholder="Search Vehicle (Plate, Make, Model...)"
+                    onSearch={handleVehicleSearch}
+                    isLoading={vehiclesLoading}
+                    options={vehicles.map(v => ({
+                      value: v.id,
+                      label: `${v.plate_number} - ${v.make} ${v.model} (${v.customer_name})`
                     }))}
                   />
                 </div>

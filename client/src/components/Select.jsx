@@ -1,12 +1,23 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChevronDown, Check, Search } from 'lucide-react';
 
-function Select({ label, value, onChange, options = [], placeholder = 'Select...', required = false, name }) {
+function Select({ 
+  label, 
+  value, 
+  onChange, 
+  options = [], 
+  placeholder = 'Select...', 
+  required = false, 
+  name,
+  onSearch,
+  isLoading = false
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef(null);
 
   const [searchTerm, setSearchTerm] = useState('');
   const searchInputRef = useRef(null);
+  const debounceTimerRef = useRef(null);
 
   // Close when clicking outside
   useEffect(() => {
@@ -28,11 +39,26 @@ function Select({ label, value, onChange, options = [], placeholder = 'Select...
     }
   }, [isOpen]);
 
+  // Handle Search with Debounce
+  const handleSearchChange = (e) => {
+    const term = e.target.value;
+    setSearchTerm(term);
+
+    if (onSearch) {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = setTimeout(() => {
+        onSearch(term);
+      }, 300); // 300ms debounce
+    }
+  };
+
   const selectedOption = options.find(opt => opt.value === value);
   
-  const filteredOptions = options.filter(opt => 
-    opt.label.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // If onSearch is provided, we assume options are already filtered by the parent/server
+  // Otherwise, we filter client-side
+  const filteredOptions = onSearch 
+    ? options 
+    : options.filter(opt => opt.label.toLowerCase().includes(searchTerm.toLowerCase()));
 
   const handleSelect = (optionValue) => {
     onChange({ target: { name, value: optionValue } });
@@ -63,13 +89,16 @@ function Select({ label, value, onChange, options = [], placeholder = 'Select...
               type="text"
               placeholder="Search..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={handleSearchChange}
               onClick={(e) => e.stopPropagation()}
             />
+            {isLoading && <div className="spinner-sm" style={{ width: '16px', height: '16px', border: '2px solid var(--primary)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }}></div>}
           </div>
           
           <div className="custom-select-options">
-            {filteredOptions.length > 0 ? (
+            {isLoading && options.length === 0 ? (
+               <div className="custom-select-empty">Loading...</div>
+            ) : filteredOptions.length > 0 ? (
               filteredOptions.map((option) => (
                 <div
                   key={option.value}
