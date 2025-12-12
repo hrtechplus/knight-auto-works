@@ -13,6 +13,7 @@ import {
 } from './validation.js';
 import { authMiddleware, setupPublicAuthRoutes, setupProtectedAuthRoutes, requireRole } from './auth.js';
 import { auditLog } from './audit.js';
+import { scheduleBackups, performBackup } from './backup.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -43,6 +44,22 @@ app.use((req, res, next) => {
 
 // Setup PUBLIC auth routes FIRST (login only) - before middleware
 setupPublicAuthRoutes(app);
+
+// Initialize Backup Scheduler
+scheduleBackups();
+
+// Trigger manual backup endpoint (Protected, Admin only ideally, but keeping simple for now)
+app.post('/api/backup', authMiddleware, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json(createError(ErrorCodes.FORBIDDEN, 'Only admins can trigger backups'));
+  }
+  const result = await performBackup();
+  if (result.success) {
+    res.json(result);
+  } else {
+    res.status(500).json(result);
+  }
+});
 
 // Health check (Public)
 app.get('/api/health', (req, res) => {
@@ -1778,9 +1795,23 @@ app.use((err, req, res, next) => {
   ));
 });
 
-// 404 handler for unknown routes
-app.use((req, res) => {
+// Serve static files from the React frontend app
+const publicPath = path.join(__dirname, 'public');
+app.use(express.static(publicPath));
+
+// 404 handler for unknown API routes
+app.all('/api/*', (req, res) => {
   res.status(404).json(createError(ErrorCodes.NOT_FOUND, `Route ${req.method} ${req.path} not found`));
+});
+
+// ZERO-CONFIG SPA HANDLER
+// For any other request, send back index.html so React Router handles it
+app.get('*', (req, res) => {
+  if (fs.existsSync(path.join(publicPath, 'index.html'))) {
+    res.sendFile(path.join(publicPath, 'index.html'));
+  } else {
+    res.status(404).json(createError(ErrorCodes.NOT_FOUND, 'Frontend not found (run build first)'));
+  }
 });
 
 // ============================================
