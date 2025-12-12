@@ -4,6 +4,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import PDFDocument from 'pdfkit';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import db from './database.js';
 import { 
   ErrorCodes, createError, validate, schemas, 
@@ -17,6 +19,13 @@ const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors());
+app.use(helmet());
+app.use(rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 300, // Limit each IP to 300 requests per `window`
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+}));
 app.use(express.json());
 
 // Request logging middleware
@@ -33,6 +42,28 @@ app.use((req, res, next) => {
 
 // Setup PUBLIC auth routes FIRST (login only) - before middleware
 setupPublicAuthRoutes(app);
+
+// Health check (Public)
+app.get('/api/health', (req, res) => {
+  try {
+    // Check database connection
+    const dbCheck = db.prepare('SELECT 1 as ok').get();
+    const stats = {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      database: dbCheck?.ok === 1 ? 'connected' : 'error',
+      memory: process.memoryUsage(),
+      version: '1.0.0'
+    };
+    res.json(stats);
+  } catch (error) {
+    res.status(503).json({ 
+      status: 'unhealthy', 
+      error: error.message 
+    });
+  }
+});
 
 // Authentication middleware (applied to all /api routes except login and health)
 app.use('/api', authMiddleware);
@@ -650,30 +681,35 @@ app.delete('/api/jobs/:jobId/items/:itemId', (req, res) => {
 // Job Parts
 app.post('/api/jobs/:id/parts', (req, res) => {
   try {
-    const { inventory_id, part_name, quantity, unit_price } = req.body;
-    const total = (quantity || 1) * (unit_price || 0);
+    const result = db.transaction(() => {
+      const { inventory_id, part_name, quantity, unit_price } = req.body;
+      const total = (quantity || 1) * (unit_price || 0);
+      
+      const insertResult = db.prepare(`
+        INSERT INTO job_parts (job_id, inventory_id, part_name, quantity, unit_price, total)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(req.params.id, inventory_id, part_name, quantity || 1, unit_price || 0, total);
+      
+      // If from inventory, update stock
+      if (inventory_id) {
+        db.prepare('UPDATE inventory SET quantity = quantity - ? WHERE id = ?').run(quantity || 1, inventory_id);
+        
+        db.prepare(`
+          INSERT INTO stock_movements (inventory_id, movement_type, quantity, reference_type, reference_id, notes)
+          VALUES (?, 'out', ?, 'job', ?, ?)
+        `).run(inventory_id, quantity || 1, req.params.id, `Used in Job #${req.params.id}`);
+      }
+      
+      // Update job parts cost
+      const parts_cost = db.prepare('SELECT COALESCE(SUM(total), 0) as total FROM job_parts WHERE job_id = ?').get(req.params.id).total;
+      const job = db.prepare('SELECT labor_cost FROM jobs WHERE id = ?').get(req.params.id);
+      const total_cost = (job?.labor_cost || 0) + parts_cost;
+      db.prepare('UPDATE jobs SET parts_cost = ?, total_cost = ? WHERE id = ?').run(parts_cost, total_cost, req.params.id);
+      
+      return { id: insertResult.lastInsertRowid, ...req.body, total };
+    })();
     
-    const result = db.prepare(`
-      INSERT INTO job_parts (job_id, inventory_id, part_name, quantity, unit_price, total)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(req.params.id, inventory_id, part_name, quantity || 1, unit_price || 0, total);
-    
-    // If from inventory, update stock
-    if (inventory_id) {
-      db.prepare('UPDATE inventory SET quantity = quantity - ? WHERE id = ?').run(quantity || 1, inventory_id);
-      db.prepare(`
-        INSERT INTO stock_movements (inventory_id, movement_type, quantity, reference_type, reference_id, notes)
-        VALUES (?, 'out', ?, 'job', ?, 'Used in job')
-      `).run(inventory_id, quantity || 1, req.params.id);
-    }
-    
-    // Update job parts cost
-    const parts_cost = db.prepare('SELECT COALESCE(SUM(total), 0) as total FROM job_parts WHERE job_id = ?').get(req.params.id).total;
-    const job = db.prepare('SELECT labor_cost FROM jobs WHERE id = ?').get(req.params.id);
-    const total_cost = (job?.labor_cost || 0) + parts_cost;
-    db.prepare('UPDATE jobs SET parts_cost = ?, total_cost = ? WHERE id = ?').run(parts_cost, total_cost, req.params.id);
-    
-    res.json({ id: result.lastInsertRowid, ...req.body, total });
+    res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -773,20 +809,23 @@ app.get('/api/inventory/:id', (req, res) => {
 
 app.post('/api/inventory', (req, res) => {
   try {
-    const { sku, name, description, category, quantity, min_stock, cost_price, sell_price, supplier_id, location } = req.body;
-    const result = db.prepare(`
-      INSERT INTO inventory (sku, name, description, category, quantity, min_stock, cost_price, sell_price, supplier_id, location)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(sku, name, description, category, quantity || 0, min_stock || 5, cost_price || 0, sell_price || 0, supplier_id, location);
+    const result = db.transaction(() => {
+      const { sku, name, description, category, quantity, min_stock, cost_price, sell_price, supplier_id, location } = req.body;
+      const insertResult = db.prepare(`
+        INSERT INTO inventory (sku, name, description, category, quantity, min_stock, cost_price, sell_price, supplier_id, location)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(sku, name, description, category, quantity || 0, min_stock || 5, cost_price || 0, sell_price || 0, supplier_id, location);
+      
+      if (quantity > 0) {
+        db.prepare(`
+          INSERT INTO stock_movements (inventory_id, movement_type, quantity, notes)
+          VALUES (?, 'in', ?, 'Initial stock')
+        `).run(insertResult.lastInsertRowid, quantity);
+      }
+      return { id: insertResult.lastInsertRowid, ...req.body };
+    })();
     
-    if (quantity > 0) {
-      db.prepare(`
-        INSERT INTO stock_movements (inventory_id, movement_type, quantity, notes)
-        VALUES (?, 'in', ?, 'Initial stock')
-      `).run(result.lastInsertRowid, quantity);
-    }
-    
-    res.json({ id: result.lastInsertRowid, ...req.body });
+    res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -981,29 +1020,34 @@ app.post('/api/invoices', (req, res) => {
 
 app.post('/api/invoices/from-job/:jobId', (req, res) => {
   try {
-    const job = db.prepare(`
-      SELECT j.*, v.customer_id FROM jobs j
-      JOIN vehicles v ON j.vehicle_id = v.id
-      WHERE j.id = ?
-    `).get(req.params.jobId);
-    if (!job) return res.status(404).json({ error: 'Job not found' });
+    const result = db.transaction(() => {
+      const job = db.prepare(`
+        SELECT j.*, v.customer_id FROM jobs j
+        JOIN vehicles v ON j.vehicle_id = v.id
+        WHERE j.id = ?
+      `).get(req.params.jobId);
+      if (!job) throw new Error('Job not found');
+      
+      const taxRate = db.prepare('SELECT value FROM settings WHERE key = ?').get('tax_rate')?.value || 0;
+      const subtotal = job.total_cost;
+      const tax_amount = subtotal * (parseFloat(taxRate) / 100);
+      const total = subtotal + tax_amount;
+      const invoice_number = generateInvoiceNumber();
+      
+      const insertResult = db.prepare(`
+        INSERT INTO invoices (invoice_number, job_id, customer_id, subtotal, tax_rate, tax_amount, total, balance)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(invoice_number, job.id, job.customer_id, subtotal, parseFloat(taxRate), tax_amount, total, total);
+      
+      db.prepare('UPDATE jobs SET status = ? WHERE id = ?').run('invoiced', job.id);
+      
+      return { id: insertResult.lastInsertRowid, invoice_number, subtotal, total, balance: total };
+    })();
     
-    const taxRate = db.prepare('SELECT value FROM settings WHERE key = ?').get('tax_rate')?.value || 0;
-    const subtotal = job.total_cost;
-    const tax_amount = subtotal * (parseFloat(taxRate) / 100);
-    const total = subtotal + tax_amount;
-    const invoice_number = generateInvoiceNumber();
-    
-    const result = db.prepare(`
-      INSERT INTO invoices (invoice_number, job_id, customer_id, subtotal, tax_rate, tax_amount, total, balance)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(invoice_number, job.id, job.customer_id, subtotal, parseFloat(taxRate), tax_amount, total, total);
-    
-    db.prepare('UPDATE jobs SET status = ? WHERE id = ?').run('invoiced', job.id);
-    
-    res.json({ id: result.lastInsertRowid, invoice_number, subtotal, total, balance: total });
+    res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    const status = error.message === 'Job not found' ? 404 : 500;
+    res.status(status).json({ error: error.message });
   }
 });
 
@@ -1497,26 +1541,7 @@ app.get('/api/reports/summary', (req, res) => {
 // SYSTEM & HEALTH ROUTES
 // ============================================
 
-app.get('/api/health', (req, res) => {
-  try {
-    // Check database connection
-    const dbCheck = db.prepare('SELECT 1 as ok').get();
-    const stats = {
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      database: dbCheck?.ok === 1 ? 'connected' : 'error',
-      memory: process.memoryUsage(),
-      version: '1.0.0'
-    };
-    res.json(stats);
-  } catch (error) {
-    res.status(503).json({ 
-      status: 'unhealthy', 
-      error: error.message 
-    });
-  }
-});
+
 
 app.post('/api/backup', (req, res) => {
   try {
@@ -1765,6 +1790,22 @@ app.use((req, res) => {
 // ============================================
 // START SERVER
 // ============================================
+
+// ============================================
+// GLOBAL ERROR HANDLER
+// ============================================
+
+app.use((err, req, res, next) => {
+  console.error('Unhandled Error:', err);
+  const status = err.status || 500;
+  const message = err.message || 'Internal Server Error';
+  res.status(status).json({
+    error: {
+      code: err.code || 'INTERNAL_ERROR',
+      message
+    }
+  });
+});
 
 app.listen(PORT, () => {
   console.log(`
