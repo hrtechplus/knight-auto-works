@@ -1801,6 +1801,110 @@ select.form-control {
   color-scheme: dark;
 }
 
+/* ===== CUSTOM SELECT COMPONENT ===== */
+.custom-select-container {
+  position: relative;
+  width: 100%;
+  margin-bottom: 1rem;
+}
+
+.custom-select-trigger {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  font-size: 0.95rem;
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  box-shadow: var(--shadow-sm);
+}
+
+.custom-select-trigger:hover {
+  background-color: var(--bg-hover);
+  border-color: var(--border-light);
+}
+
+.custom-select-trigger.open {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.15);
+  background-color: var(--bg-primary);
+}
+
+.custom-select-trigger .placeholder {
+  color: var(--text-muted);
+}
+
+.custom-select-trigger .arrow {
+  color: var(--text-muted);
+  transition: transform 0.3s ease;
+}
+
+.custom-select-trigger .arrow.rotated {
+  transform: rotate(180deg);
+  color: var(--primary);
+}
+
+.custom-select-menu {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  width: 100%;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 1000;
+  max-height: 250px;
+  overflow-y: auto;
+  padding: 0.5rem;
+  animation: slideInDown 0.2s ease-out;
+  backdrop-filter: blur(12px);
+}
+
+@keyframes slideInDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.custom-select-option {
+  padding: 0.6rem 1rem;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.9rem;
+}
+
+.custom-select-option:hover {
+  background-color: rgba(234, 88, 12, 0.1);
+  color: var(--primary);
+}
+
+.custom-select-option.selected {
+  background-color: var(--primary);
+  color: white;
+}
+
+.custom-select-option.selected:hover {
+  background-color: var(--primary-dark);
+}
+
+.custom-select-empty {
+  padding: 1rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+
 /* Hover State */
 .form-control:hover,
 select.form-control:hover {

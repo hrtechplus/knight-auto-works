@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Search, X, Car } from 'lucide-react';
 import { getVehicles, getCustomers, createVehicle, updateVehicle, deleteVehicle } from '../api';
+import Select from '../components/Select';
 
 function Vehicles() {
   const [vehicles, setVehicles] = useState([]);
@@ -193,18 +194,15 @@ function Vehicles() {
             <form onSubmit={handleSubmit}>
               <div className="modal-body">
                 <div className="form-group">
-                  <label className="form-label">Owner *</label>
-                  <select
-                    className="form-control"
+                  <Select
+                    label="Owner"
+                    required
                     value={formData.customer_id}
                     onChange={(e) => setFormData({...formData, customer_id: e.target.value})}
-                    required
-                  >
-                    <option value="">Select Customer</option>
-                    {customers.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
+                    name="customer_id"
+                    placeholder="Select Customer"
+                    options={customers.map(c => ({ value: c.id, label: c.name }))}
+                  />
                 </div>
                 
                 <div className="form-row">
