@@ -579,7 +579,14 @@ function JobDetail() {
                 <tbody>
                   {job.items.map(item => (
                     <tr key={item.id}>
-                      <td>{item.description}</td>
+                      <td>
+                        {item.description}
+                        {item.discount > 0 && (
+                          <div style={{ fontSize: '0.75rem', color: 'var(--success)' }}>
+                            Discount: {item.discount_type === 'percent' ? `${item.discount}%` : `Rs. ${item.discount}`}
+                          </div>
+                        )}
+                      </td>
                       <td>{item.quantity}</td>
                       <td className="currency">Rs. {item.unit_price.toLocaleString()}</td>
                       <td className="currency">Rs. {item.total.toLocaleString()}</td>
