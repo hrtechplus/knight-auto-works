@@ -3,9 +3,14 @@ FROM node:20-alpine AS builder
 # Build Frontend
 WORKDIR /app/client
 COPY client/package*.json ./
-RUN npm ci
+
+# Install dependencies and fix permissions
+RUN npm ci && chmod -R +x node_modules/.bin
+
 COPY client/ ./
-RUN npx vite build
+
+# Build using node directly to avoid permission issues
+RUN ./node_modules/.bin/vite build
 
 # Setup Backend & Runtime
 FROM node:20-alpine
