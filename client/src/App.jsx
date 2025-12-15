@@ -21,10 +21,12 @@ import SettingsPage from './pages/Settings';
 import Login from './pages/Login';
 import { getStoredUser, logout, setUnauthorizedHandler } from './api';
 import ProtectedRoute from './components/ProtectedRoute';
+import ConfirmDialog from './components/ConfirmDialog';
 import './index.css';
 
 function AppContent({ user, onLogout }) {
   const navigate = useNavigate();
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   useEffect(() => {
     // Handle 401 responses by logging out
@@ -33,6 +35,14 @@ function AppContent({ user, onLogout }) {
       navigate('/');
     });
   }, [onLogout, navigate]);
+
+  const handleLogoutClick = () => {
+    setShowLogoutConfirm(true);
+  };
+
+  const handleLogoutConfirm = () => {
+    onLogout();
+  };
 
   return (
     <div className="app-container">
@@ -149,7 +159,7 @@ function AppContent({ user, onLogout }) {
             </div>
           </div>
           <button
-            onClick={onLogout}
+            onClick={handleLogoutClick}
             className="btn btn-ghost"
             style={{
               width: '100%',
@@ -214,6 +224,18 @@ function AppContent({ user, onLogout }) {
           } />
         </Routes>
       </main>
+
+      {/* Sign Out Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={showLogoutConfirm}
+        onClose={() => setShowLogoutConfirm(false)}
+        onConfirm={handleLogoutConfirm}
+        title="Sign Out"
+        message="Are you sure you want to sign out? You'll need to log in again to access the system."
+        confirmText="Sign Out"
+        cancelText="Cancel"
+        variant="warning"
+      />
     </div>
   );
 }

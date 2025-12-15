@@ -275,7 +275,15 @@ app.get('/api/customers', (req, res) => {
         ORDER BY c.created_at DESC
       `).all();
     }
-    res.json(customers);
+    
+    // Decrypt sensitive PII for all customers
+    const decryptedCustomers = customers.map(c => ({
+      ...c,
+      phone: c.phone ? decrypt(c.phone) : null,
+      email: c.email ? decrypt(c.email) : null
+    }));
+    
+    res.json(decryptedCustomers);
   } catch (error) {
     res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
   }
@@ -347,10 +355,15 @@ app.put('/api/customers/:id', (req, res) => {
     }
     
     const { name, phone, email, address, notes } = req.body;
+    
+    // Encrypt sensitive PII
+    const encryptedPhone = phone ? encrypt(phone) : null;
+    const encryptedEmail = email ? encrypt(email) : null;
+    
     db.prepare(`
       UPDATE customers SET name = ?, phone = ?, email = ?, address = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(name, phone, email, address, notes, req.params.id);
+    `).run(name, encryptedPhone, encryptedEmail, address, notes, req.params.id);
     
     const updatedCustomer = { id: req.params.id, ...req.body };
     auditLog('customers', req.params.id, 'update', oldCustomer, updatedCustomer);
