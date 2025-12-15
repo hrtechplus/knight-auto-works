@@ -11,9 +11,12 @@ import {
   ErrorCodes, createError, validate, schemas, 
   canTransitionJobStatus 
 } from './validation.js';
-import { authMiddleware, setupPublicAuthRoutes, setupProtectedAuthRoutes, requireRole } from './auth.js';
+import { authMiddleware, setupPublicAuthRoutes, setupProtectedAuthRoutes, requireRole, requireAdminOrAbove } from './auth.js';
 import { auditLog } from './audit.js';
 import { scheduleBackups, performBackup } from './backup.js';
+import { csrfMiddleware, generateCsrfToken } from './csrf.js';
+import { sanitizeMiddleware } from './sanitize.js';
+import { encrypt, decrypt, encryptFields, decryptFields } from './encryption.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -29,6 +32,9 @@ app.use(rateLimit({
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
 }));
 app.use(express.json());
+
+// Input sanitization middleware
+app.use(sanitizeMiddleware);
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -50,7 +56,7 @@ scheduleBackups();
 
 // Trigger manual backup endpoint (Protected, Admin only ideally, but keeping simple for now)
 app.post('/api/backup', authMiddleware, async (req, res) => {
-  if (req.user.role !== 'admin') {
+  if (!['admin', 'super_admin'].includes(req.user.role)) {
     return res.status(403).json(createError(ErrorCodes.FORBIDDEN, 'Only admins can trigger backups'));
   }
   const result = await performBackup();
@@ -85,6 +91,13 @@ app.get('/api/health', (req, res) => {
 
 // Authentication middleware (applied to all /api routes except login and health)
 app.use('/api', authMiddleware);
+
+// CSRF Token Endpoint (must be after auth middleware)
+app.get('/api/csrf-token', (req, res) => {
+  const sessionId = req.user?.id?.toString() || req.ip;
+  const token = generateCsrfToken(sessionId);
+  res.json({ csrfToken: token });
+});
 
 // Setup PROTECTED auth routes (me, password, users) - after middleware
 setupProtectedAuthRoutes(app);
@@ -275,12 +288,19 @@ app.get('/api/customers/:id', (req, res) => {
       return res.status(404).json(createError(ErrorCodes.NOT_FOUND, 'Customer not found'));
     }
     
+    // Decrypt sensitive PII
+    const decryptedCustomer = {
+      ...customer,
+      phone: customer.phone ? decrypt(customer.phone) : null,
+      email: customer.email ? decrypt(customer.email) : null
+    };
+    
     const vehicles = db.prepare('SELECT * FROM vehicles WHERE customer_id = ?').all(req.params.id);
     const invoices = db.prepare(`
       SELECT * FROM invoices WHERE customer_id = ? ORDER BY created_at DESC
     `).all(req.params.id);
     
-    res.json({ ...customer, vehicles, invoices });
+    res.json({ ...decryptedCustomer, vehicles, invoices });
   } catch (error) {
     res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
   }
@@ -295,10 +315,15 @@ app.post('/api/customers', (req, res) => {
     }
     
     const { name, phone, email, address, notes } = req.body;
+    
+    // Encrypt sensitive PII
+    const encryptedPhone = phone ? encrypt(phone) : null;
+    const encryptedEmail = email ? encrypt(email) : null;
+    
     const result = db.prepare(`
       INSERT INTO customers (name, phone, email, address, notes)
       VALUES (?, ?, ?, ?, ?)
-    `).run(name, phone, email, address, notes);
+    `).run(name, encryptedPhone, encryptedEmail, address, notes);
     
     const newCustomer = { id: result.lastInsertRowid, ...req.body };
     auditLog('customers', result.lastInsertRowid, 'create', null, newCustomer);
@@ -335,7 +360,7 @@ app.put('/api/customers/:id', (req, res) => {
   }
 });
 
-app.delete('/api/customers/:id', requireRole('admin'), (req, res) => {
+app.delete('/api/customers/:id', requireRole('admin', 'super_admin'), (req, res) => {
   try {
     const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
     if (!customer) {
@@ -498,7 +523,7 @@ app.put('/api/vehicles/:id', (req, res) => {
   }
 });
 
-app.delete('/api/vehicles/:id', requireRole('admin'), (req, res) => {
+app.delete('/api/vehicles/:id', requireRole('admin', 'super_admin'), (req, res) => {
   try {
     const vehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(req.params.id);
     if (!vehicle) {
@@ -632,7 +657,7 @@ app.put('/api/jobs/:id', (req, res) => {
   }
 });
 
-app.delete('/api/jobs/:id', requireRole('admin'), (req, res) => {
+app.delete('/api/jobs/:id', requireRole('admin', 'super_admin'), (req, res) => {
   try {
     db.prepare('DELETE FROM jobs WHERE id = ?').run(req.params.id);
     res.json({ success: true });
@@ -674,7 +699,7 @@ app.post('/api/jobs/:id/items', (req, res) => {
   }
 });
 
-app.delete('/api/jobs/:jobId/items/:itemId', requireRole('admin'), (req, res) => {
+app.delete('/api/jobs/:jobId/items/:itemId', requireRole('admin', 'super_admin'), (req, res) => {
   try {
     db.prepare('DELETE FROM job_items WHERE id = ? AND job_id = ?').run(req.params.itemId, req.params.jobId);
     res.json({ success: true });
@@ -723,7 +748,7 @@ app.post('/api/jobs/:id/parts', (req, res) => {
   }
 });
 
-app.delete('/api/jobs/:jobId/parts/:partId', requireRole('admin'), (req, res) => {
+app.delete('/api/jobs/:jobId/parts/:partId', requireRole('admin', 'super_admin'), (req, res) => {
   try {
     const part = db.prepare('SELECT * FROM job_parts WHERE id = ? AND job_id = ?').get(req.params.partId, req.params.jobId);
     if (part && part.inventory_id) {
@@ -868,7 +893,7 @@ app.put('/api/inventory/:id', (req, res) => {
   }
 });
 
-app.delete('/api/inventory/:id', requireRole('admin'), (req, res) => {
+app.delete('/api/inventory/:id', requireRole('admin', 'super_admin'), (req, res) => {
   try {
     db.prepare('DELETE FROM inventory WHERE id = ?').run(req.params.id);
     res.json({ success: true });
@@ -936,7 +961,7 @@ app.put('/api/suppliers/:id', (req, res) => {
   }
 });
 
-app.delete('/api/suppliers/:id', requireRole('admin'), (req, res) => {
+app.delete('/api/suppliers/:id', requireRole('admin', 'super_admin'), (req, res) => {
   try {
     db.prepare('DELETE FROM suppliers WHERE id = ?').run(req.params.id);
     res.json({ success: true });
@@ -1463,7 +1488,7 @@ app.post('/api/expenses', (req, res) => {
   }
 });
 
-app.delete('/api/expenses/:id', requireRole('admin'), (req, res) => {
+app.delete('/api/expenses/:id', requireRole('admin', 'super_admin'), (req, res) => {
   try {
     db.prepare('DELETE FROM expenses WHERE id = ?').run(req.params.id);
     res.json({ success: true });
@@ -1702,7 +1727,7 @@ app.put('/api/service-reminders/:id', (req, res) => {
   }
 });
 
-app.delete('/api/service-reminders/:id', requireRole('admin'), (req, res) => {
+app.delete('/api/service-reminders/:id', requireRole('admin', 'super_admin'), (req, res) => {
   try {
     const reminder = db.prepare('SELECT * FROM service_reminders WHERE id = ?').get(req.params.id);
     if (reminder) {

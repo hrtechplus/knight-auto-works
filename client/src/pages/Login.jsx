@@ -160,19 +160,7 @@ export default function Login({ onLogin }) {
           </button>
         </form>
 
-        {/* Default credentials hint */}
-        <div style={{
-          marginTop: '1.5rem',
-          padding: '1rem',
-          background: 'var(--bg-tertiary)',
-          borderRadius: 'var(--radius-md)',
-          fontSize: '0.8rem',
-          color: 'var(--text-muted)'
-        }}>
-          <strong>Default credentials:</strong><br />
-          Username: <code>admin</code><br />
-          Password: <code>admin123</code>
-        </div>
+
       </div>
     </div>
   );

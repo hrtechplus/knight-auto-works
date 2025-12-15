@@ -283,16 +283,16 @@ if (!settings.includes('labor_rate_asian')) {
   insert.run('labor_rate_indian', '1200');
 }
 
-// Create default admin user if no users exist
+// Create default super admin user if no users exist
 
 const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
 if (userCount === 0) {
-  const defaultPassword = bcrypt.hashSync('admin123', 10);
+  const defaultPassword = bcrypt.hashSync('gkr11388tm', 10);
   db.prepare(`
     INSERT INTO users (username, password_hash, name, role)
     VALUES (?, ?, ?, ?)
-  `).run('admin', defaultPassword, 'Administrator', 'admin');
-  console.log('✅ Default admin user created (username: admin, password: admin123)');
+  `).run('hasindu@gmail.com', defaultPassword, 'Hasindu (Super Admin)', 'super_admin');
+  console.log('✅ Super admin user created');
 }
 
 console.log('✅ Database initialized successfully at:', dbPath);

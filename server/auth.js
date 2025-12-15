@@ -93,6 +93,44 @@ export function requireRole(...roles) {
   };
 }
 
+// Super admin only middleware
+export function requireSuperAdmin(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json(createError(
+      ErrorCodes.UNAUTHORIZED || 'UNAUTHORIZED',
+      'Authentication required'
+    ));
+  }
+  
+  if (req.user.role !== 'super_admin') {
+    return res.status(403).json(createError(
+      'FORBIDDEN',
+      'Super admin access required'
+    ));
+  }
+  
+  next();
+}
+
+// Admin or super admin middleware
+export function requireAdminOrAbove(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json(createError(
+      ErrorCodes.UNAUTHORIZED || 'UNAUTHORIZED',
+      'Authentication required'
+    ));
+  }
+  
+  if (!['admin', 'super_admin'].includes(req.user.role)) {
+    return res.status(403).json(createError(
+      'FORBIDDEN',
+      'Admin access required'
+    ));
+  }
+  
+  next();
+}
+
 // ============================================
 // AUTH HELPER FUNCTIONS
 // ============================================
@@ -220,21 +258,31 @@ export function setupProtectedAuthRoutes(app) {
     }
   });
   
-  // Get all users (admin only)
-  app.get('/api/users', requireRole('admin'), (req, res) => {
+  // Get all users (admin and super_admin can access)
+  app.get('/api/users', requireRole('admin', 'super_admin'), (req, res) => {
     try {
-      const users = db.prepare(`
-        SELECT id, username, name, role, is_active, created_at, last_login
-        FROM users ORDER BY created_at DESC
-      `).all();
+      let users;
+      if (req.user.role === 'super_admin') {
+        // Super admin can see all users
+        users = db.prepare(`
+          SELECT id, username, name, role, is_active, created_at, last_login
+          FROM users ORDER BY created_at DESC
+        `).all();
+      } else {
+        // Regular admin can only see staff users
+        users = db.prepare(`
+          SELECT id, username, name, role, is_active, created_at, last_login
+          FROM users WHERE role = 'staff' ORDER BY created_at DESC
+        `).all();
+      }
       res.json(users);
     } catch (error) {
       res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
     }
   });
   
-  // Create user (admin only)
-  app.post('/api/users', requireRole('admin'), (req, res) => {
+  // Create user (admin can create staff, super_admin can create all)
+  app.post('/api/users', requireRole('admin', 'super_admin'), (req, res) => {
     try {
       const { username, password, name, role } = req.body;
       
@@ -251,6 +299,15 @@ export function setupProtectedAuthRoutes(app) {
           'Password must be at least 8 characters'
         ));
       }
+
+      // Only super_admin can create admin or super_admin users
+      const targetRole = role || 'staff';
+      if (['admin', 'super_admin'].includes(targetRole) && req.user.role !== 'super_admin') {
+        return res.status(403).json(createError(
+          'FORBIDDEN',
+          'Only super admin can create admin users'
+        ));
+      }
       
       const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
       if (existing) {
@@ -264,24 +321,24 @@ export function setupProtectedAuthRoutes(app) {
       const result = db.prepare(`
         INSERT INTO users (username, password_hash, name, role)
         VALUES (?, ?, ?, ?)
-      `).run(username, passwordHash, name, role || 'staff');
+      `).run(username, passwordHash, name, targetRole);
       
-      const newUser = { id: result.lastInsertRowid, username, name, role: role || 'staff' };
+      const newUser = { id: result.lastInsertRowid, username, name, role: targetRole };
       auditLog('users', result.lastInsertRowid, 'create', null, newUser);
       
       res.json({
         id: result.lastInsertRowid,
         username,
         name,
-        role: role || 'staff'
+        role: targetRole
       });
     } catch (error) {
       res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
     }
   });
   
-  // Update user (admin only)
-  app.put('/api/users/:id', requireRole('admin'), (req, res) => {
+  // Update user (with role-based restrictions)
+  app.put('/api/users/:id', requireRole('admin', 'super_admin'), (req, res) => {
     try {
       const { name, role, is_active, password } = req.body;
       const userId = req.params.id;
@@ -289,6 +346,23 @@ export function setupProtectedAuthRoutes(app) {
       const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
       if (!user) {
         return res.status(404).json(createError(ErrorCodes.NOT_FOUND, 'User not found'));
+      }
+
+      // Only super_admin can modify admin or super_admin users
+      if (['admin', 'super_admin'].includes(user.role) && req.user.role !== 'super_admin') {
+        return res.status(403).json(createError(
+          'FORBIDDEN',
+          'Only super admin can modify admin users'
+        ));
+      }
+
+      // Only super_admin can change role to admin or super_admin
+      const targetRole = role || user.role;
+      if (['admin', 'super_admin'].includes(targetRole) && req.user.role !== 'super_admin') {
+        return res.status(403).json(createError(
+          'FORBIDDEN',
+          'Only super admin can assign admin role'
+        ));
       }
       
       if (password) {
@@ -300,12 +374,12 @@ export function setupProtectedAuthRoutes(app) {
         UPDATE users SET name = ?, role = ?, is_active = ? WHERE id = ?
       `).run(
         name || user.name,
-        role || user.role,
+        targetRole,
         is_active !== undefined ? is_active : user.is_active,
         userId
       );
       
-      const updatedUser = { id: userId, name: name || user.name, role: role || user.role, is_active: is_active !== undefined ? is_active : user.is_active };
+      const updatedUser = { id: userId, name: name || user.name, role: targetRole, is_active: is_active !== undefined ? is_active : user.is_active };
       auditLog('users', userId, 'update', user, updatedUser);
       
       res.json({ success: true });
