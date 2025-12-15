@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, NavLink, useNavigate } from 'react-router-dom';
 import { 
   LayoutDashboard, Users, Car, Wrench, Package, FileText, Receipt, 
-  Settings, TrendingUp, Shield, LogOut, User
+  Settings, TrendingUp, Shield, LogOut, User, Truck
 } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import Customers from './pages/Customers';
@@ -12,6 +12,7 @@ import VehicleDetail from './pages/VehicleDetail';
 import Jobs from './pages/Jobs';
 import JobDetail from './pages/JobDetail';
 import Inventory from './pages/Inventory';
+import Suppliers from './pages/Suppliers';
 import Invoices from './pages/Invoices';
 import InvoiceDetail from './pages/InvoiceDetail';
 import Expenses from './pages/Expenses';
@@ -83,6 +84,10 @@ function AppContent({ user, onLogout }) {
             <NavLink to="/inventory" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <Package size={20} />
               Parts & Stock
+            </NavLink>
+            <NavLink to="/suppliers" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+              <Truck size={20} />
+              Suppliers
             </NavLink>
           </div>
           
@@ -169,6 +174,7 @@ function AppContent({ user, onLogout }) {
           <Route path="/jobs" element={<Jobs />} />
           <Route path="/jobs/:id" element={<JobDetail />} />
           <Route path="/inventory" element={<Inventory />} />
+          <Route path="/suppliers" element={<Suppliers />} />
           <Route path="/invoices" element={<Invoices />} />
           <Route path="/invoices/:id" element={<InvoiceDetail />} />
           <Route path="/expenses" element={<Expenses />} />
