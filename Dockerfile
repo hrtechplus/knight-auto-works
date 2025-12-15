@@ -2,26 +2,25 @@ FROM node:20-alpine AS builder
 
 # Build Frontend
 WORKDIR /app/client
-COPY client/package*.json ./
 
-# Install dependencies and fix permissions
-RUN npm ci && chmod -R +x node_modules/.bin
-
+# Copy all client files first
 COPY client/ ./
 
-# Build using node directly to avoid permission issues
-RUN ./node_modules/.bin/vite build
+# Install dependencies
+RUN npm ci
+
+# Build using node directly (bypasses shell script permissions)
+RUN node ./node_modules/vite/bin/vite.js build
 
 # Setup Backend & Runtime
 FROM node:20-alpine
 WORKDIR /app/server
 
-# Install server dependencies
-COPY server/package*.json ./
-RUN npm ci --production
-
-# Copy server code
+# Copy server files
 COPY server/ ./
+
+# Install server dependencies
+RUN npm ci --production
 
 # Copy built frontend from builder stage
 COPY --from=builder /app/client/dist ./public
