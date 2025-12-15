@@ -258,31 +258,21 @@ export function setupProtectedAuthRoutes(app) {
     }
   });
   
-  // Get all users (admin and super_admin can access)
-  app.get('/api/users', requireRole('admin', 'super_admin'), (req, res) => {
+  // Get all users (super_admin only)
+  app.get('/api/users', requireRole('super_admin'), (req, res) => {
     try {
-      let users;
-      if (req.user.role === 'super_admin') {
-        // Super admin can see all users
-        users = db.prepare(`
-          SELECT id, username, name, role, is_active, created_at, last_login
-          FROM users ORDER BY created_at DESC
-        `).all();
-      } else {
-        // Regular admin can only see staff users
-        users = db.prepare(`
-          SELECT id, username, name, role, is_active, created_at, last_login
-          FROM users WHERE role = 'staff' ORDER BY created_at DESC
-        `).all();
-      }
+      const users = db.prepare(`
+        SELECT id, username, name, role, is_active, created_at, last_login
+        FROM users ORDER BY created_at DESC
+      `).all();
       res.json(users);
     } catch (error) {
       res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
     }
   });
   
-  // Create user (admin can create staff, super_admin can create all)
-  app.post('/api/users', requireRole('admin', 'super_admin'), (req, res) => {
+  // Create user (super_admin only - can create staff and admins)
+  app.post('/api/users', requireRole('super_admin'), (req, res) => {
     try {
       const { username, password, name, role } = req.body;
       
@@ -300,14 +290,7 @@ export function setupProtectedAuthRoutes(app) {
         ));
       }
 
-      // Only super_admin can create admin or super_admin users
       const targetRole = role || 'staff';
-      if (['admin', 'super_admin'].includes(targetRole) && req.user.role !== 'super_admin') {
-        return res.status(403).json(createError(
-          'FORBIDDEN',
-          'Only super admin can create admin users'
-        ));
-      }
       
       const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
       if (existing) {
@@ -337,8 +320,8 @@ export function setupProtectedAuthRoutes(app) {
     }
   });
   
-  // Update user (with role-based restrictions)
-  app.put('/api/users/:id', requireRole('admin', 'super_admin'), (req, res) => {
+  // Update user (super_admin only)
+  app.put('/api/users/:id', requireRole('super_admin'), (req, res) => {
     try {
       const { name, role, is_active, password } = req.body;
       const userId = req.params.id;
@@ -348,22 +331,7 @@ export function setupProtectedAuthRoutes(app) {
         return res.status(404).json(createError(ErrorCodes.NOT_FOUND, 'User not found'));
       }
 
-      // Only super_admin can modify admin or super_admin users
-      if (['admin', 'super_admin'].includes(user.role) && req.user.role !== 'super_admin') {
-        return res.status(403).json(createError(
-          'FORBIDDEN',
-          'Only super admin can modify admin users'
-        ));
-      }
-
-      // Only super_admin can change role to admin or super_admin
       const targetRole = role || user.role;
-      if (['admin', 'super_admin'].includes(targetRole) && req.user.role !== 'super_admin') {
-        return res.status(403).json(createError(
-          'FORBIDDEN',
-          'Only super admin can assign admin role'
-        ));
-      }
       
       if (password) {
         const newHash = hashPassword(password);

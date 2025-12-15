@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, NavLink, useNavigate } from 'react-router-dom';
 import { 
   LayoutDashboard, Users, Car, Wrench, Package, FileText, Receipt, 
-  Settings, TrendingUp, Shield, LogOut, User, Truck
+  Settings, TrendingUp, Shield, LogOut, User, Truck, UserCog
 } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import Customers from './pages/Customers';
@@ -18,6 +18,7 @@ import InvoiceDetail from './pages/InvoiceDetail';
 import Expenses from './pages/Expenses';
 import Reports from './pages/Reports';
 import SettingsPage from './pages/Settings';
+import UsersPage from './pages/Users';
 import Login from './pages/Login';
 import { getStoredUser, logout, setUnauthorizedHandler } from './api';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -111,7 +112,7 @@ function AppContent({ user, onLogout }) {
               <Receipt size={20} />
               Expenses
             </NavLink>
-            {user?.role === 'admin' && (
+                        {['admin', 'super_admin'].includes(user?.role) && (
               <NavLink to="/reports" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
                 <TrendingUp size={20} />
                 Reports
@@ -119,13 +120,19 @@ function AppContent({ user, onLogout }) {
             )}
           </div>
           
-          {user?.role === 'admin' && (
+                    {['admin', 'super_admin'].includes(user?.role) && (
             <div className="nav-section">
               <div className="nav-section-title">System</div>
               <NavLink to="/settings" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
                 <Settings size={20} />
                 Settings
               </NavLink>
+              {user?.role === 'super_admin' && (
+                <NavLink to="/users" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+                  <UserCog size={20} />
+                  Manage Users
+                </NavLink>
+              )}
             </div>
           )}
         </nav>
@@ -213,13 +220,18 @@ function AppContent({ user, onLogout }) {
           <Route path="/invoices/:id" element={<InvoiceDetail />} />
           <Route path="/expenses" element={<Expenses />} />
           <Route path="/reports" element={
-            <ProtectedRoute roles={['admin']}>
+            <ProtectedRoute roles={['admin', 'super_admin']}>
               <Reports />
             </ProtectedRoute>
           } />
           <Route path="/settings" element={
-            <ProtectedRoute roles={['admin']}>
+            <ProtectedRoute roles={['admin', 'super_admin']}>
               <SettingsPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/users" element={
+            <ProtectedRoute roles={['super_admin']}>
+              <UsersPage />
             </ProtectedRoute>
           } />
         </Routes>

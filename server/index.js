@@ -234,7 +234,7 @@ app.get('/api/settings', (req, res) => {
   }
 });
 
-app.put('/api/settings', requireRole('admin'), (req, res) => {
+app.put('/api/settings', requireRole('admin', 'super_admin'), (req, res) => {
   try {
     const stmt = db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)');
     const transaction = db.transaction((settings) => {
