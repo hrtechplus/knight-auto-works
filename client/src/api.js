@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const API_BASE = 'http://localhost:3001/api';
+// Use relative URL in production, localhost in development
+const API_BASE = import.meta.env.DEV ? 'http://localhost:3001/api' : '/api';
 
 const api = axios.create({
   baseURL: API_BASE,
