@@ -216,7 +216,63 @@ function Settings() {
               </div>
               <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
                 <p>Version 1.0.0</p>
-                <p style={{ marginTop: '0.5rem' }}>Built with React + Express + SQLite</p>
+                <p style={{ marginTop: '0.5rem' }}>Built with React + Express + PostgreSQL</p>
+              </div>
+              
+              {/* Developer Credits */}
+              <div style={{ 
+                marginTop: '1.5rem', 
+                paddingTop: '1.5rem', 
+                borderTop: '1px solid var(--border)'
+              }}>
+                <div style={{ 
+                  fontSize: '0.75rem', 
+                  textTransform: 'uppercase', 
+                  letterSpacing: '1px', 
+                  color: 'var(--text-muted)',
+                  marginBottom: '0.75rem'
+                }}>
+                  Developer
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <div style={{
+                    width: '40px',
+                    height: '40px',
+                    background: 'linear-gradient(135deg, #f97316, #ea580c)',
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: '600',
+                    color: 'white',
+                    fontSize: '1rem'
+                  }}>
+                    H
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: '500' }}>Hasindu</div>
+                    <a 
+                      href="https://hasidu.live/" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      style={{ 
+                        color: 'var(--primary)', 
+                        textDecoration: 'none',
+                        fontSize: '0.85rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.25rem'
+                      }}
+                    >
+                      hasidu.live
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                        <polyline points="15 3 21 3 21 9"/>
+                        <line x1="10" y1="14" x2="21" y2="3"/>
+                      </svg>
+                    </a>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

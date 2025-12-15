@@ -160,6 +160,30 @@ function AppContent({ user, onLogout }) {
             <LogOut size={16} />
             Sign Out
           </button>
+          
+          {/* Developer Credit */}
+          <div style={{ 
+            marginTop: '1rem', 
+            paddingTop: '0.75rem', 
+            borderTop: '1px solid var(--border)',
+            textAlign: 'center'
+          }}>
+            <a 
+              href="https://hasidu.live/" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              style={{ 
+                fontSize: '0.7rem', 
+                color: 'var(--text-muted)',
+                textDecoration: 'none',
+                transition: 'color 0.2s'
+              }}
+              onMouseEnter={(e) => e.target.style.color = 'var(--primary)'}
+              onMouseLeave={(e) => e.target.style.color = 'var(--text-muted)'}
+            >
+              Developed by <span style={{ fontWeight: '500' }}>Hasindu</span>
+            </a>
+          </div>
         </div>
       </aside>
       
