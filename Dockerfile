@@ -21,16 +21,12 @@ COPY server/ ./
 # Copy built frontend from builder stage
 COPY --from=builder /app/client/dist ./public
 
-# Create directories for data persistence
-RUN mkdir -p /app/server/data /app/server/backups
-
 # Environment variables
 ENV NODE_ENV=production
 ENV PORT=3001
-ENV DB_PATH=/app/server/data/knight-auto.db
 
 # Expose port
 EXPOSE 3001
 
-# Start command
-CMD ["node", "index.js"]
+# Start PostgreSQL version
+CMD ["node", "index-pg.js"]
