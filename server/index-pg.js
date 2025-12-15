@@ -804,6 +804,64 @@ app.post('/api/inventory/:id/adjust', async (req, res) => {
 });
 
 // ============================================
+// SUPPLIER ROUTES
+// ============================================
+
+app.get('/api/suppliers', async (req, res) => {
+  try {
+    const suppliers = await queryAll('SELECT * FROM suppliers ORDER BY name');
+    res.json(suppliers);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/suppliers/:id', async (req, res) => {
+  try {
+    const supplier = await queryOne('SELECT * FROM suppliers WHERE id = $1', [req.params.id]);
+    if (!supplier) return res.status(404).json({ error: 'Supplier not found' });
+    res.json(supplier);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/suppliers', async (req, res) => {
+  try {
+    const { name, contact_person, phone, email, address, notes } = req.body;
+    const result = await query(
+      'INSERT INTO suppliers (name, contact_person, phone, email, address, notes) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+      [name, contact_person, phone, email, address, notes]
+    );
+    res.json({ id: result.rows[0].id, ...req.body });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/suppliers/:id', async (req, res) => {
+  try {
+    const { name, contact_person, phone, email, address, notes } = req.body;
+    await query(
+      'UPDATE suppliers SET name = $1, contact_person = $2, phone = $3, email = $4, address = $5, notes = $6 WHERE id = $7',
+      [name, contact_person, phone, email, address, notes, req.params.id]
+    );
+    res.json({ id: parseInt(req.params.id), ...req.body });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/suppliers/:id', async (req, res) => {
+  try {
+    await query('DELETE FROM suppliers WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================
 // INVOICE ROUTES
 // ============================================
 

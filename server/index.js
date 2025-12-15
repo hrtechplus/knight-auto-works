@@ -89,8 +89,6 @@ app.use('/api', authMiddleware);
 // Setup PROTECTED auth routes (me, password, users) - after middleware
 setupProtectedAuthRoutes(app);
 
-// Start Backup Service
-backupService.start();
 
 // ============================================
 // AUDIT LOGGING
