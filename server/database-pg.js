@@ -278,8 +278,28 @@ export async function initializeDatabase() {
       name TEXT NOT NULL,
       role TEXT DEFAULT 'staff',
       is_active BOOLEAN DEFAULT true,
+      locked_until TIMESTAMP,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       last_login TIMESTAMP
+    );
+
+    -- Refresh tokens for secure session management
+    CREATE TABLE IF NOT EXISTS refresh_tokens (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      token TEXT NOT NULL UNIQUE,
+      expires_at TIMESTAMP NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      revoked BOOLEAN DEFAULT FALSE
+    );
+
+    -- Login attempts for brute force protection
+    CREATE TABLE IF NOT EXISTS login_attempts (
+      id SERIAL PRIMARY KEY,
+      username TEXT NOT NULL,
+      ip_address TEXT,
+      success BOOLEAN NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
   `);
 
