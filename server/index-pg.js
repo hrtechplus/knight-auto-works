@@ -117,6 +117,144 @@ app.get('/api/auth/me', async (req, res) => {
 });
 
 // ============================================
+// ROLE-BASED ACCESS CONTROL
+// ============================================
+
+// Role middleware - checks if user has one of the specified roles
+function requireRole(...roles) {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json(createError(ErrorCodes.UNAUTHORIZED, 'Authentication required'));
+    }
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json(createError('FORBIDDEN', 'Insufficient permissions'));
+    }
+    next();
+  };
+}
+
+// Convenience middleware for admin or above
+function requireAdminOrAbove(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json(createError(ErrorCodes.UNAUTHORIZED, 'Authentication required'));
+  }
+  if (!['admin', 'super_admin'].includes(req.user.role)) {
+    return res.status(403).json(createError('FORBIDDEN', 'Admin access required'));
+  }
+  next();
+}
+
+// ============================================
+// USER MANAGEMENT (super_admin only)
+// ============================================
+
+// Get all users
+app.get('/api/users', requireRole('super_admin'), async (req, res) => {
+  try {
+    const users = await queryAll('SELECT id, username, name, role, is_active, created_at, last_login FROM users ORDER BY created_at DESC');
+    res.json(users);
+  } catch (error) {
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
+  }
+});
+
+// Create user
+app.post('/api/users', requireRole('super_admin'), async (req, res) => {
+  try {
+    const { username, password, name, role } = req.body;
+    
+    if (!username || !password || !name) {
+      return res.status(400).json(createError(ErrorCodes.VALIDATION_ERROR, 'Username, password, and name are required'));
+    }
+    
+    if (password.length < 8) {
+      return res.status(400).json(createError(ErrorCodes.VALIDATION_ERROR, 'Password must be at least 8 characters'));
+    }
+    
+    const existing = await queryOne('SELECT id FROM users WHERE username = $1', [username]);
+    if (existing) {
+      return res.status(400).json(createError(ErrorCodes.CONFLICT, 'Username already exists'));
+    }
+    
+    const passwordHash = bcrypt.hashSync(password, 10);
+    const targetRole = role || 'staff';
+    
+    const result = await query(
+      'INSERT INTO users (username, password_hash, name, role) VALUES ($1, $2, $3, $4) RETURNING id',
+      [username, passwordHash, name, targetRole]
+    );
+    
+    const newUser = { id: result.rows[0].id, username, name, role: targetRole };
+    await auditLog('users', result.rows[0].id, 'create', null, newUser);
+    
+    res.json(newUser);
+  } catch (error) {
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
+  }
+});
+
+// Update user
+app.put('/api/users/:id', requireRole('super_admin'), async (req, res) => {
+  try {
+    const { name, role, is_active, password } = req.body;
+    const userId = req.params.id;
+    
+    const user = await queryOne('SELECT * FROM users WHERE id = $1', [userId]);
+    if (!user) {
+      return res.status(404).json(createError(ErrorCodes.NOT_FOUND, 'User not found'));
+    }
+    
+    if (password) {
+      const newHash = bcrypt.hashSync(password, 10);
+      await query('UPDATE users SET password_hash = $1 WHERE id = $2', [newHash, userId]);
+    }
+    
+    const targetRole = role || user.role;
+    const targetActive = is_active !== undefined ? is_active : user.is_active;
+    
+    await query(
+      'UPDATE users SET name = $1, role = $2, is_active = $3 WHERE id = $4',
+      [name || user.name, targetRole, targetActive, userId]
+    );
+    
+    const updatedUser = { id: userId, name: name || user.name, role: targetRole, is_active: targetActive };
+    await auditLog('users', userId, 'update', user, updatedUser);
+    
+    res.json({ success: true, user: updatedUser });
+  } catch (error) {
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
+  }
+});
+
+// Change password (for current user)
+app.put('/api/auth/password', async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json(createError(ErrorCodes.VALIDATION_ERROR, 'Current and new password are required'));
+    }
+    
+    if (newPassword.length < 8) {
+      return res.status(400).json(createError(ErrorCodes.VALIDATION_ERROR, 'New password must be at least 8 characters'));
+    }
+    
+    const user = await queryOne('SELECT * FROM users WHERE id = $1', [req.user.id]);
+    
+    if (!bcrypt.compareSync(currentPassword, user.password_hash)) {
+      return res.status(400).json(createError(ErrorCodes.VALIDATION_ERROR, 'Current password is incorrect'));
+    }
+    
+    const newHash = bcrypt.hashSync(newPassword, 10);
+    await query('UPDATE users SET password_hash = $1 WHERE id = $2', [newHash, req.user.id]);
+    
+    res.json({ success: true, message: 'Password changed successfully' });
+  } catch (error) {
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
+  }
+});
+
+// ============================================
 // AUDIT LOGGING
 // ============================================
 
@@ -237,7 +375,7 @@ app.get('/api/settings', async (req, res) => {
   }
 });
 
-app.put('/api/settings', async (req, res) => {
+app.put('/api/settings', requireAdminOrAbove, async (req, res) => {
   try {
     for (const [key, value] of Object.entries(req.body)) {
       await query(
@@ -334,7 +472,7 @@ app.put('/api/customers/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/customers/:id', async (req, res) => {
+app.delete('/api/customers/:id', requireAdminOrAbove, async (req, res) => {
   try {
     const customer = await queryOne('SELECT * FROM customers WHERE id = $1', [req.params.id]);
     if (!customer) return res.status(404).json(createError(ErrorCodes.NOT_FOUND, 'Customer not found'));
@@ -460,7 +598,7 @@ app.put('/api/vehicles/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/vehicles/:id', async (req, res) => {
+app.delete('/api/vehicles/:id', requireAdminOrAbove, async (req, res) => {
   try {
     const vehicle = await queryOne('SELECT * FROM vehicles WHERE id = $1', [req.params.id]);
     if (!vehicle) return res.status(404).json(createError(ErrorCodes.NOT_FOUND, 'Vehicle not found'));
@@ -588,7 +726,7 @@ app.put('/api/jobs/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/jobs/:id', async (req, res) => {
+app.delete('/api/jobs/:id', requireAdminOrAbove, async (req, res) => {
   try {
     await query('DELETE FROM jobs WHERE id = $1', [req.params.id]);
     res.json({ success: true });
@@ -777,7 +915,7 @@ app.put('/api/inventory/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/inventory/:id', async (req, res) => {
+app.delete('/api/inventory/:id', requireAdminOrAbove, async (req, res) => {
   try {
     await query('DELETE FROM inventory WHERE id = $1', [req.params.id]);
     res.json({ success: true });
@@ -1036,7 +1174,7 @@ app.post('/api/expenses', async (req, res) => {
   }
 });
 
-app.delete('/api/expenses/:id', async (req, res) => {
+app.delete('/api/expenses/:id', requireAdminOrAbove, async (req, res) => {
   try {
     await query('DELETE FROM expenses WHERE id = $1', [req.params.id]);
     res.json({ success: true });
@@ -1049,7 +1187,7 @@ app.delete('/api/expenses/:id', async (req, res) => {
 // REPORTS
 // ============================================
 
-app.get('/api/reports/revenue', async (req, res) => {
+app.get('/api/reports/revenue', requireAdminOrAbove, async (req, res) => {
   try {
     const { start_date, end_date } = req.query;
     const start = start_date || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
