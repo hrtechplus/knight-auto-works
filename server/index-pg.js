@@ -65,9 +65,9 @@ const authMiddleware = async (req, res, next) => {
   }
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    const user = await queryOne('SELECT id, username, name, role FROM users WHERE id = $1', [decoded.userId]);
-    if (!user) {
-      return res.status(401).json(createError(ErrorCodes.UNAUTHORIZED, 'Invalid token'));
+    const user = await queryOne('SELECT id, username, name, role, is_active FROM users WHERE id = $1', [decoded.userId]);
+    if (!user || !user.is_active) {
+      return res.status(401).json(createError(ErrorCodes.UNAUTHORIZED, 'User not found or inactive'));
     }
     req.user = user;
     next();
@@ -83,6 +83,9 @@ app.post('/api/auth/login', async (req, res) => {
     const user = await queryOne('SELECT * FROM users WHERE username = $1', [username]);
     if (!user || !bcrypt.compareSync(password, user.password_hash)) {
       return res.status(401).json(createError(ErrorCodes.UNAUTHORIZED, 'Invalid credentials'));
+    }
+    if (!user.is_active) {
+      return res.status(401).json(createError(ErrorCodes.UNAUTHORIZED, 'Account is disabled'));
     }
     await query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1', [user.id]);
     const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '24h' });
@@ -1085,6 +1088,317 @@ app.post('/api/invoices', async (req, res) => {
     res.json({ id: result.rows[0].id, invoice_number, ...req.body, balance });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Create invoice from job
+app.post('/api/invoices/from-job/:jobId', async (req, res) => {
+  try {
+    const result = await transaction(async (client) => {
+      // Get job with customer info
+      const jobResult = await client.query(`
+        SELECT j.*, v.customer_id FROM jobs j
+        JOIN vehicles v ON j.vehicle_id = v.id
+        WHERE j.id = $1
+      `, [req.params.jobId]);
+      
+      if (jobResult.rows.length === 0) {
+        throw new Error('Job not found');
+      }
+      const job = jobResult.rows[0];
+      
+      // Get tax rate from settings
+      const taxResult = await client.query("SELECT value FROM settings WHERE key = 'tax_rate'");
+      const taxRate = parseFloat(taxResult.rows[0]?.value || 0);
+      
+      const subtotal = parseFloat(job.total_cost) || 0;
+      const tax_amount = subtotal * (taxRate / 100);
+      const total = subtotal + tax_amount;
+      const invoice_number = await generateInvoiceNumber();
+      
+      // Create invoice
+      const insertResult = await client.query(
+        'INSERT INTO invoices (invoice_number, job_id, customer_id, subtotal, tax_rate, tax_amount, total, balance) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
+        [invoice_number, job.id, job.customer_id, subtotal, taxRate, tax_amount, total, total]
+      );
+      
+      // Update job status to invoiced
+      await client.query("UPDATE jobs SET status = 'invoiced' WHERE id = $1", [job.id]);
+      
+      return { id: insertResult.rows[0].id, invoice_number, subtotal, total, balance: total };
+    });
+    
+    res.json(result);
+  } catch (error) {
+    const status = error.message === 'Job not found' ? 404 : 500;
+    res.status(status).json({ error: error.message });
+  }
+});
+
+// PDF Invoice Generation - Professional Design with Logo
+app.get('/api/invoices/:id/pdf', async (req, res) => {
+  try {
+    const invoice = await queryOne(`
+      SELECT i.*, c.name as customer_name, c.phone as customer_phone, 
+             c.email as customer_email, c.address as customer_address,
+             j.job_number, j.description as job_description,
+             v.plate_number, v.make, v.model
+      FROM invoices i
+      JOIN customers c ON i.customer_id = c.id
+      LEFT JOIN jobs j ON i.job_id = j.id
+      LEFT JOIN vehicles v ON j.vehicle_id = v.id
+      WHERE i.id = $1
+    `, [req.params.id]);
+    
+    if (!invoice) {
+      return res.status(404).json(createError(ErrorCodes.NOT_FOUND, 'Invoice not found'));
+    }
+    
+    // Get job items and parts if linked to a job
+    let items = [];
+    let parts = [];
+    if (invoice.job_id) {
+      items = await queryAll('SELECT * FROM job_items WHERE job_id = $1', [invoice.job_id]);
+      parts = await queryAll('SELECT * FROM job_parts WHERE job_id = $1', [invoice.job_id]);
+    }
+    
+    // Get settings
+    const settings = await queryAll('SELECT * FROM settings');
+    const settingsMap = {};
+    settings.forEach(s => settingsMap[s.key] = s.value);
+    
+    const businessName = settingsMap.business_name || 'Knight Auto Works';
+    const currencySymbol = settingsMap.currency_symbol || 'Rs.';
+    
+    // Create PDF with custom margins
+    const doc = new PDFDocument({ 
+      margin: 50,
+      size: 'A4'
+    });
+    
+    // Set response headers
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename=invoice-${invoice.invoice_number}.pdf`);
+    
+    doc.pipe(res);
+    
+    // Colors
+    const primaryColor = '#f97316'; // Orange
+    const darkColor = '#1a1a1a';
+    const grayColor = '#666666';
+    const lightGray = '#f5f5f5';
+    
+    // ========== HEADER WITH LOGO ==========
+    const logoPath = path.join(__dirname, 'assets', 'logo.jpg');
+    try {
+      doc.image(logoPath, 50, 40, { width: 70 });
+    } catch (e) {
+      // Logo not found, skip
+    }
+    
+    // Business name next to logo
+    doc.font('Helvetica-Bold').fontSize(22).fillColor(primaryColor);
+    doc.text(businessName, 130, 50);
+    doc.font('Helvetica').fontSize(10).fillColor(grayColor);
+    doc.text('Professional Auto Care Services', 130, 75);
+    
+    // Invoice title on the right
+    doc.font('Helvetica-Bold').fontSize(28).fillColor(darkColor);
+    doc.text('INVOICE', 400, 50, { align: 'right' });
+    
+    // Invoice number badge
+    doc.fontSize(11).fillColor(grayColor);
+    doc.text(`#${invoice.invoice_number}`, 400, 82, { align: 'right' });
+    
+    // Horizontal line
+    doc.strokeColor(primaryColor).lineWidth(2);
+    doc.moveTo(50, 115).lineTo(545, 115).stroke();
+    
+    // ========== INVOICE DETAILS & CUSTOMER ==========
+    let yPos = 135;
+    
+    // Left side - Bill To
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(primaryColor);
+    doc.text('BILL TO', 50, yPos);
+    doc.font('Helvetica-Bold').fontSize(12).fillColor(darkColor);
+    doc.text(invoice.customer_name, 50, yPos + 15);
+    doc.font('Helvetica').fontSize(10).fillColor(grayColor);
+    let customerY = yPos + 30;
+    if (invoice.customer_phone) {
+      doc.text(`Phone: ${invoice.customer_phone}`, 50, customerY);
+      customerY += 12;
+    }
+    if (invoice.customer_email) {
+      doc.text(`Email: ${invoice.customer_email}`, 50, customerY);
+      customerY += 12;
+    }
+    if (invoice.customer_address) {
+      doc.text(invoice.customer_address, 50, customerY, { width: 200 });
+    }
+    
+    // Right side - Invoice Details
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(primaryColor);
+    doc.text('INVOICE DETAILS', 350, yPos);
+    
+    const detailsX = 350;
+    const valuesX = 450;
+    let detailY = yPos + 15;
+    
+    doc.font('Helvetica').fontSize(10).fillColor(grayColor);
+    doc.text('Date:', detailsX, detailY);
+    doc.fillColor(darkColor).text(new Date(invoice.created_at).toLocaleDateString(), valuesX, detailY);
+    detailY += 14;
+    
+    if (invoice.due_date) {
+      doc.fillColor(grayColor).text('Due Date:', detailsX, detailY);
+      doc.fillColor(darkColor).text(new Date(invoice.due_date).toLocaleDateString(), valuesX, detailY);
+      detailY += 14;
+    }
+    
+    doc.fillColor(grayColor).text('Status:', detailsX, detailY);
+    const statusColor = invoice.status === 'paid' ? '#22c55e' : '#ef4444';
+    doc.fillColor(statusColor).font('Helvetica-Bold').text(invoice.status.toUpperCase(), valuesX, detailY);
+    detailY += 14;
+    
+    if (invoice.job_number) {
+      doc.font('Helvetica').fillColor(grayColor).text('Job Ref:', detailsX, detailY);
+      doc.fillColor(darkColor).text(invoice.job_number, valuesX, detailY);
+      detailY += 14;
+    }
+    
+    if (invoice.plate_number) {
+      doc.fillColor(grayColor).text('Vehicle:', detailsX, detailY);
+      doc.fillColor(darkColor).text(`${invoice.plate_number} - ${invoice.make} ${invoice.model}`, valuesX, detailY);
+    }
+    
+    // Line Items Table
+    yPos = 310;
+    
+    const tableLeft = 50;
+    const tableRight = 550;
+    const colDesc = 50;
+    const colQty = 320;
+    const colRate = 380;
+    const colTotal = 460;
+    
+    // Header
+    doc.fillColor(primaryColor).rect(tableLeft, yPos, tableRight - tableLeft, 20).fill();
+    doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(10);
+    doc.text('DESCRIPTION', colDesc + 10, yPos + 5);
+    doc.text('QTY', colQty, yPos + 5, { width: 50, align: 'center' });
+    doc.text('RATE', colRate, yPos + 5, { width: 60, align: 'right' });
+    doc.text('TOTAL', colTotal, yPos + 5, { width: 80, align: 'right' });
+    
+    yPos += 20;
+    let itemIndex = 0;
+    
+    // Job Items
+    items.forEach(item => {
+      const rowHeight = 24; 
+      if (itemIndex % 2 === 0) {
+        doc.rect(tableLeft, yPos, tableRight - tableLeft, rowHeight).fill('#f9fafb');
+      }
+      
+      doc.font('Helvetica').fontSize(9).fillColor(darkColor);
+      doc.text(item.description, colDesc + 10, yPos + 5, { width: 260 });
+      doc.text(parseFloat(item.quantity).toString(), colQty, yPos + 5, { width: 50, align: 'center' });
+      doc.text(`${currencySymbol}${parseFloat(item.unit_price).toFixed(2)}`, colRate, yPos + 5, { width: 60, align: 'right' });
+      doc.text(`${currencySymbol}${parseFloat(item.total).toFixed(2)}`, colTotal, yPos + 5, { width: 80, align: 'right' });
+      
+      yPos += rowHeight;
+      itemIndex++;
+    });
+
+    // Add parts with "Parts:" label
+    if (parts.length > 0) {
+      doc.rect(tableLeft, yPos, tableRight - tableLeft, 18).fill('#fff7ed');
+      doc.font('Helvetica-Bold').fontSize(8).fillColor(primaryColor);
+      doc.text('PARTS & MATERIALS', colDesc + 10, yPos + 5);
+      yPos += 18;
+    }
+    
+    let rowIndex = 0;
+    parts.forEach(part => {
+      const rowHeight = 20;
+      if (rowIndex % 2 === 0) {
+        doc.rect(tableLeft, yPos, tableRight - tableLeft, rowHeight).fill(lightGray);
+      }
+      
+      doc.font('Helvetica').fontSize(9).fillColor(darkColor);
+      doc.text(part.part_name, colDesc + 10, yPos + 5, { width: 260 });
+      doc.text(parseFloat(part.quantity).toString(), colQty, yPos + 5, { width: 50, align: 'center' });
+      doc.text(`${currencySymbol}${parseFloat(part.unit_price).toFixed(2)}`, colRate, yPos + 5, { width: 60, align: 'right' });
+      doc.font('Helvetica-Bold').text(`${currencySymbol}${parseFloat(part.total).toFixed(2)}`, colTotal, yPos + 5, { width: 55, align: 'right' });
+      
+      yPos += rowHeight;
+      rowIndex++;
+    });
+    
+    // Table bottom border
+    doc.strokeColor('#dddddd').lineWidth(1);
+    doc.moveTo(tableLeft, yPos).lineTo(tableRight, yPos).stroke();
+    
+    // ========== TOTALS SECTION ==========
+    yPos += 20;
+    const totalsX = 380;
+    const totalsValueX = 480;
+    
+    // Subtotal
+    doc.font('Helvetica').fontSize(10).fillColor(grayColor);
+    doc.text('Subtotal:', totalsX, yPos);
+    doc.fillColor(darkColor).text(`${currencySymbol}${parseFloat(invoice.subtotal).toFixed(2)}`, totalsValueX, yPos, { width: 55, align: 'right' });
+    yPos += 16;
+    
+    // Tax
+    if (parseFloat(invoice.tax_amount) > 0) {
+      doc.fillColor(grayColor).text(`Tax (${invoice.tax_rate}%):`, totalsX, yPos);
+      doc.fillColor(darkColor).text(`${currencySymbol}${parseFloat(invoice.tax_amount).toFixed(2)}`, totalsValueX, yPos, { width: 55, align: 'right' });
+      yPos += 16;
+    }
+    
+    // Discount
+    if (parseFloat(invoice.discount) > 0) {
+      doc.fillColor(grayColor).text('Discount:', totalsX, yPos);
+      doc.fillColor('#22c55e').text(`-${currencySymbol}${parseFloat(invoice.discount).toFixed(2)}`, totalsValueX, yPos, { width: 55, align: 'right' });
+      yPos += 16;
+    }
+    
+    // Total box
+    doc.rect(totalsX - 10, yPos, 180, 25).fill(primaryColor);
+    doc.font('Helvetica-Bold').fontSize(12).fillColor('white');
+    doc.text('TOTAL:', totalsX, yPos + 6);
+    doc.text(`${currencySymbol}${parseFloat(invoice.total).toFixed(2)}`, totalsValueX - 10, yPos + 6, { width: 75, align: 'right' });
+    yPos += 35;
+    
+    // Payment info
+    doc.font('Helvetica').fontSize(10).fillColor(grayColor);
+    doc.text('Amount Paid:', totalsX, yPos);
+    doc.fillColor('#22c55e').text(`${currencySymbol}${parseFloat(invoice.amount_paid).toFixed(2)}`, totalsValueX, yPos, { width: 55, align: 'right' });
+    yPos += 16;
+    
+    doc.fillColor(grayColor).text('Balance Due:', totalsX, yPos);
+    const balanceColor = parseFloat(invoice.balance) > 0 ? '#ef4444' : '#22c55e';
+    doc.font('Helvetica-Bold').fillColor(balanceColor);
+    doc.text(`${currencySymbol}${parseFloat(invoice.balance).toFixed(2)}`, totalsValueX, yPos, { width: 55, align: 'right' });
+    
+    // ========== FOOTER ==========
+    const footerY = 750;
+    
+    // Divider line
+    doc.strokeColor('#dddddd').lineWidth(1);
+    doc.moveTo(50, footerY - 20).lineTo(545, footerY - 20).stroke();
+    
+    // Thank you message
+    doc.font('Helvetica-Bold').fontSize(12).fillColor(primaryColor);
+    doc.text('Thank you for your business!', 50, footerY, { align: 'center', width: 495 });
+    
+    doc.font('Helvetica').fontSize(8).fillColor(grayColor);
+    doc.text('For any questions about this invoice, please contact us.', 50, footerY + 18, { align: 'center', width: 495 });
+    doc.text(`Generated by ${businessName} • ${new Date().toLocaleDateString()}`, 50, footerY + 35, { align: 'center', width: 495 });
+    
+    doc.end();
+  } catch (error) {
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
   }
 });
 
