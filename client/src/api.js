@@ -15,11 +15,16 @@ const api = axios.create({
 // ============================================
 
 const TOKEN_KEY = 'knight_auto_token';
+const REFRESH_TOKEN_KEY = 'knight_auto_refresh_token';
 const USER_KEY = 'knight_auto_user';
 
 export const getToken = () => localStorage.getItem(TOKEN_KEY);
 export const setToken = (token) => localStorage.setItem(TOKEN_KEY, token);
 export const removeToken = () => localStorage.removeItem(TOKEN_KEY);
+
+export const getRefreshToken = () => localStorage.getItem(REFRESH_TOKEN_KEY);
+export const setRefreshToken = (token) => localStorage.setItem(REFRESH_TOKEN_KEY, token);
+export const removeRefreshToken = () => localStorage.removeItem(REFRESH_TOKEN_KEY);
 
 export const getStoredUser = () => {
   const user = localStorage.getItem(USER_KEY);
@@ -27,6 +32,13 @@ export const getStoredUser = () => {
 };
 export const setStoredUser = (user) => localStorage.setItem(USER_KEY, JSON.stringify(user));
 export const removeStoredUser = () => localStorage.removeItem(USER_KEY);
+
+// Clear all auth data
+const clearAuth = () => {
+  removeToken();
+  removeRefreshToken();
+  removeStoredUser();
+};
 
 // Add auth token to all requests
 api.interceptors.request.use(
@@ -41,7 +53,7 @@ api.interceptors.request.use(
 );
 
 // ============================================
-// GLOBAL ERROR INTERCEPTOR
+// GLOBAL ERROR INTERCEPTOR WITH AUTO-REFRESH
 // ============================================
 
 let showToast = null;
@@ -50,16 +62,68 @@ export const setToastHandler = (handler) => { showToast = handler; };
 let onUnauthorized = null;
 export const setUnauthorizedHandler = (handler) => { onUnauthorized = handler; };
 
+let isRefreshing = false;
+let refreshSubscribers = [];
+
+const subscribeTokenRefresh = (cb) => refreshSubscribers.push(cb);
+const onTokenRefreshed = (token) => refreshSubscribers.forEach(cb => cb(token));
+
 api.interceptors.response.use(
   response => response,
-  error => {
+  async error => {
+    const originalRequest = error.config;
     const errorData = error.response?.data?.error;
+    const errorCode = errorData?.code || error.response?.data?.code;
     const message = errorData?.message || error.message || 'An unexpected error occurred';
+    
+    // Handle expired token - try to refresh
+    if (error.response?.status === 401 && errorCode === 'TOKEN_EXPIRED' && !originalRequest._retry) {
+      if (isRefreshing) {
+        // Wait for the current refresh to complete
+        return new Promise((resolve) => {
+          subscribeTokenRefresh((token) => {
+            originalRequest.headers.Authorization = `Bearer ${token}`;
+            resolve(api(originalRequest));
+          });
+        });
+      }
+      
+      originalRequest._retry = true;
+      isRefreshing = true;
+      
+      try {
+        const refreshToken = getRefreshToken();
+        if (!refreshToken) {
+          throw new Error('No refresh token');
+        }
+        
+        const response = await axios.post(`${API_BASE}/auth/refresh`, { refreshToken });
+        const { accessToken, refreshToken: newRefreshToken, user } = response.data;
+        
+        setToken(accessToken);
+        setRefreshToken(newRefreshToken);
+        setStoredUser(user);
+        
+        isRefreshing = false;
+        onTokenRefreshed(accessToken);
+        refreshSubscribers = [];
+        
+        originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+        return api(originalRequest);
+      } catch (refreshError) {
+        isRefreshing = false;
+        refreshSubscribers = [];
+        clearAuth();
+        if (onUnauthorized) {
+          onUnauthorized();
+        }
+        return Promise.reject(refreshError);
+      }
+    }
     
     // Handle 401 - redirect to login
     if (error.response?.status === 401) {
-      removeToken();
-      removeStoredUser();
+      clearAuth();
       if (onUnauthorized) {
         onUnauthorized();
       }
@@ -93,14 +157,38 @@ api.interceptors.response.use(
 
 export const login = async (username, password) => {
   const response = await api.post('/auth/login', { username, password });
-  setToken(response.data.token);
+  setToken(response.data.accessToken);
+  setRefreshToken(response.data.refreshToken);
   setStoredUser(response.data.user);
   return response.data;
 };
 
-export const logout = () => {
-  removeToken();
-  removeStoredUser();
+export const logout = async () => {
+  try {
+    const refreshToken = getRefreshToken();
+    if (refreshToken) {
+      await api.post('/auth/logout', { refreshToken });
+    }
+  } catch (e) {
+    // Ignore logout errors
+  }
+  clearAuth();
+};
+
+export const refreshAuthToken = async () => {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return null;
+  
+  try {
+    const response = await api.post('/auth/refresh', { refreshToken });
+    setToken(response.data.accessToken);
+    setRefreshToken(response.data.refreshToken);
+    setStoredUser(response.data.user);
+    return response.data;
+  } catch (e) {
+    clearAuth();
+    return null;
+  }
 };
 
 export const getCurrentUser = () => api.get('/auth/me');

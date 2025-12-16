@@ -49,13 +49,61 @@ app.use((req, res, next) => {
 });
 
 // ============================================
-// AUTHENTICATION (Simplified for PostgreSQL)
+// AUTHENTICATION (Secure Implementation)
 // ============================================
 
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { v4 as uuidv4 } from 'uuid';
 
+// JWT Configuration
 const JWT_SECRET = process.env.JWT_SECRET || 'knight-auto-works-secret-key-change-in-production';
+const ACCESS_TOKEN_EXPIRES = '15m';  // Short-lived access token
+const REFRESH_TOKEN_DAYS = 7;        // Refresh token validity
+
+// Enforce JWT secret in production
+if (process.env.NODE_ENV === 'production' && JWT_SECRET === 'knight-auto-works-secret-key-change-in-production') {
+  console.error('❌ CRITICAL: JWT_SECRET environment variable must be set in production!');
+  process.exit(1);
+}
+
+// Login attempt limiting configuration
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_MINUTES = 15;
+
+// Helper: Generate refresh token
+async function generateRefreshToken(userId) {
+  const token = uuidv4();
+  const expiresAt = new Date(Date.now() + REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000);
+  await query(
+    'INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)',
+    [userId, token, expiresAt]
+  );
+  return token;
+}
+
+// Helper: Check login attempts
+async function checkLoginAttempts(username, ip) {
+  const since = new Date(Date.now() - LOCKOUT_MINUTES * 60 * 1000);
+  const attempts = await queryOne(
+    `SELECT COUNT(*) as count FROM login_attempts 
+     WHERE username = $1 AND success = false AND created_at > $2`,
+    [username, since]
+  );
+  return parseInt(attempts.count) >= MAX_LOGIN_ATTEMPTS;
+}
+
+// Helper: Record login attempt
+async function recordLoginAttempt(username, ip, success) {
+  await query(
+    'INSERT INTO login_attempts (username, ip_address, success) VALUES ($1, $2, $3)',
+    [username, ip, success]
+  );
+  // Cleanup old attempts (keep last 30 days)
+  await query(
+    `DELETE FROM login_attempts WHERE created_at < NOW() - INTERVAL '30 days'`
+  );
+}
 
 // Auth middleware
 const authMiddleware = async (req, res, next) => {
@@ -72,24 +120,106 @@ const authMiddleware = async (req, res, next) => {
     req.user = user;
     next();
   } catch (error) {
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json(createError('TOKEN_EXPIRED', 'Access token expired'));
+    }
     res.status(401).json(createError(ErrorCodes.UNAUTHORIZED, 'Invalid token'));
   }
 };
 
-// Login (Public)
+// Login (Public) - with rate limiting and refresh tokens
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { username, password } = req.body;
+    const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+    
+    // Check if account is locked
+    const isLocked = await checkLoginAttempts(username, ip);
+    if (isLocked) {
+      return res.status(429).json(createError('ACCOUNT_LOCKED', `Too many failed attempts. Try again in ${LOCKOUT_MINUTES} minutes.`));
+    }
+    
     const user = await queryOne('SELECT * FROM users WHERE username = $1', [username]);
+    
     if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+      await recordLoginAttempt(username, ip, false);
       return res.status(401).json(createError(ErrorCodes.UNAUTHORIZED, 'Invalid credentials'));
     }
+    
     if (!user.is_active) {
       return res.status(401).json(createError(ErrorCodes.UNAUTHORIZED, 'Account is disabled'));
     }
+    
+    // Successful login - record and generate tokens
+    await recordLoginAttempt(username, ip, true);
     await query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1', [user.id]);
-    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '24h' });
-    res.json({ token, user: { id: user.id, username: user.username, name: user.name, role: user.role } });
+    
+    const accessToken = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRES });
+    const refreshToken = await generateRefreshToken(user.id);
+    
+    res.json({ 
+      accessToken, 
+      refreshToken,
+      expiresIn: 900, // 15 minutes in seconds
+      user: { id: user.id, username: user.username, name: user.name, role: user.role } 
+    });
+  } catch (error) {
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
+  }
+});
+
+// Refresh Token endpoint
+app.post('/api/auth/refresh', async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    
+    if (!refreshToken) {
+      return res.status(400).json(createError(ErrorCodes.VALIDATION_ERROR, 'Refresh token required'));
+    }
+    
+    const tokenRecord = await queryOne(
+      'SELECT * FROM refresh_tokens WHERE token = $1 AND revoked = false AND expires_at > NOW()',
+      [refreshToken]
+    );
+    
+    if (!tokenRecord) {
+      return res.status(401).json(createError(ErrorCodes.UNAUTHORIZED, 'Invalid or expired refresh token'));
+    }
+    
+    const user = await queryOne('SELECT id, username, name, role, is_active FROM users WHERE id = $1', [tokenRecord.user_id]);
+    
+    if (!user || !user.is_active) {
+      await query('UPDATE refresh_tokens SET revoked = true WHERE token = $1', [refreshToken]);
+      return res.status(401).json(createError(ErrorCodes.UNAUTHORIZED, 'User not found or inactive'));
+    }
+    
+    // Revoke old refresh token and generate new ones (token rotation)
+    await query('UPDATE refresh_tokens SET revoked = true WHERE token = $1', [refreshToken]);
+    
+    const newAccessToken = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRES });
+    const newRefreshToken = await generateRefreshToken(user.id);
+    
+    res.json({ 
+      accessToken: newAccessToken, 
+      refreshToken: newRefreshToken,
+      expiresIn: 900,
+      user: { id: user.id, username: user.username, name: user.name, role: user.role }
+    });
+  } catch (error) {
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
+  }
+});
+
+// Logout endpoint - revoke refresh token
+app.post('/api/auth/logout', async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    
+    if (refreshToken) {
+      await query('UPDATE refresh_tokens SET revoked = true WHERE token = $1', [refreshToken]);
+    }
+    
+    res.json({ success: true, message: 'Logged out successfully' });
   } catch (error) {
     res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
   }
