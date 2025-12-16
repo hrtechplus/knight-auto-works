@@ -1529,6 +1529,145 @@ app.get('/api/reports/revenue', requireAdminOrAbove, async (req, res) => {
   }
 });
 
+// Reports Summary
+app.get('/api/reports/summary', requireAdminOrAbove, async (req, res) => {
+  try {
+    const { start_date, end_date } = req.query;
+    const start = start_date || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+    const end = end_date || new Date().toISOString().split('T')[0];
+    
+    const [revenue, expenses, jobsCompleted, newCustomers] = await Promise.all([
+      queryOne('SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE DATE(created_at) BETWEEN $1 AND $2', [start, end]),
+      queryOne('SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE expense_date BETWEEN $1 AND $2', [start, end]),
+      queryOne('SELECT COUNT(*) as count FROM jobs WHERE DATE(completed_at) BETWEEN $1 AND $2', [start, end]),
+      queryOne('SELECT COUNT(*) as count FROM customers WHERE DATE(created_at) BETWEEN $1 AND $2', [start, end])
+    ]);
+    
+    res.json({
+      period: { start, end },
+      revenue: parseFloat(revenue.total),
+      expenses: parseFloat(expenses.total),
+      profit: parseFloat(revenue.total) - parseFloat(expenses.total),
+      jobsCompleted: parseInt(jobsCompleted.count),
+      newCustomers: parseInt(newCustomers.count)
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Technician Performance Report
+app.get('/api/reports/technician', requireAdminOrAbove, async (req, res) => {
+  try {
+    const { start_date, end_date } = req.query;
+    const start = start_date || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+    const end = end_date || new Date().toISOString().split('T')[0];
+    
+    const technicianStats = await queryAll(`
+      SELECT 
+        technician,
+        COUNT(*) as total_jobs,
+        SUM(CASE WHEN status = 'completed' OR status = 'invoiced' THEN 1 ELSE 0 END) as completed_jobs,
+        SUM(labor_hours) as total_hours,
+        SUM(labor_cost) as total_labor_revenue,
+        SUM(total_cost) as total_revenue,
+        ROUND(AVG(EXTRACT(EPOCH FROM (completed_at - created_at))/86400)::numeric, 1) as avg_completion_days
+      FROM jobs
+      WHERE technician IS NOT NULL AND technician != ''
+        AND DATE(created_at) BETWEEN $1 AND $2
+      GROUP BY technician
+      ORDER BY total_revenue DESC
+    `, [start, end]);
+    
+    res.json(technicianStats);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================
+// SERVICE REMINDERS
+// ============================================
+
+app.get('/api/service-reminders', async (req, res) => {
+  try {
+    const reminders = await queryAll(`
+      SELECT r.*, v.plate_number, v.make, v.model, c.name as customer_name, c.phone as customer_phone
+      FROM service_reminders r
+      JOIN vehicles v ON r.vehicle_id = v.id
+      JOIN customers c ON v.customer_id = c.id
+      ORDER BY r.due_date ASC
+    `);
+    res.json(reminders);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/service-reminders/due', async (req, res) => {
+  try {
+    const reminders = await queryAll(`
+      SELECT r.*, v.plate_number, v.make, v.model, c.name as customer_name, c.phone as customer_phone
+      FROM service_reminders r
+      JOIN vehicles v ON r.vehicle_id = v.id
+      JOIN customers c ON v.customer_id = c.id
+      WHERE r.status = 'pending' AND r.due_date <= CURRENT_DATE + INTERVAL '7 days'
+      ORDER BY r.due_date ASC
+    `);
+    res.json(reminders);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/service-reminders', async (req, res) => {
+  try {
+    const { vehicle_id, reminder_type, due_mileage, due_date, description } = req.body;
+    
+    const vehicle = await queryOne('SELECT id FROM vehicles WHERE id = $1', [vehicle_id]);
+    if (!vehicle) {
+      return res.status(404).json(createError(ErrorCodes.NOT_FOUND, 'Vehicle not found'));
+    }
+    
+    const result = await query(
+      'INSERT INTO service_reminders (vehicle_id, reminder_type, due_mileage, due_date, description) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+      [vehicle_id, reminder_type, due_mileage, due_date, description]
+    );
+    
+    res.json({ id: result.rows[0].id, ...req.body });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/service-reminders/:id', async (req, res) => {
+  try {
+    const { status, notified_at } = req.body;
+    const reminder = await queryOne('SELECT * FROM service_reminders WHERE id = $1', [req.params.id]);
+    if (!reminder) {
+      return res.status(404).json(createError(ErrorCodes.NOT_FOUND, 'Reminder not found'));
+    }
+    
+    await query(
+      'UPDATE service_reminders SET status = $1, notified_at = $2 WHERE id = $3',
+      [status || reminder.status, notified_at, req.params.id]
+    );
+    
+    res.json({ id: req.params.id, ...req.body });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/service-reminders/:id', requireAdminOrAbove, async (req, res) => {
+  try {
+    await query('DELETE FROM service_reminders WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ============================================
 // STATIC FILES & SPA HANDLER
 // ============================================
