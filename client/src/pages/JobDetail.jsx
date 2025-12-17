@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, X, Trash2, Package, FileText, Check, Play, Clock, MessageSquare, Mail } from 'lucide-react';
-import { getJob, updateJob, addJobItem, deleteJobItem, addJobPart, deleteJobPart, getInventory, createInvoiceFromJob, sendEmailNotification, getSettings } from '../api';
+import { ArrowLeft, Plus, X, Trash2, Package, FileText, Check, Play, Clock, MessageSquare, Mail, Edit2 } from 'lucide-react';
+import { getJob, updateJob, addJobItem, updateJobItem, deleteJobItem, addJobPart, updateJobPart, deleteJobPart, getInventory, createInvoiceFromJob, sendEmailNotification, getSettings } from '../api';
 import Breadcrumb from '../components/Breadcrumb';
 import { SkeletonCard } from '../components/Skeleton';
 import Select from '../components/Select';
@@ -15,11 +15,15 @@ function JobDetail() {
   const [loading, setLoading] = useState(true);
   const [showItemModal, setShowItemModal] = useState(false);
   const [showPartModal, setShowPartModal] = useState(false);
+  const [showEditItemModal, setShowEditItemModal] = useState(false);
+  const [showEditPartModal, setShowEditPartModal] = useState(false);
   const [notificationLoading, setNotificationLoading] = useState(false);
   const [showNotifyMenu, setShowNotifyMenu] = useState(false);
   const [itemForm, setItemForm] = useState({ description: '', quantity: 1, unit_price: 0, discount: 0, discount_type: 'fixed' });
+  const [editItemForm, setEditItemForm] = useState({ id: null, description: '', quantity: 1, unit_price: 0, discount: 0, discount_type: 'fixed' });
   const [settings, setSettings] = useState({});
-  const [partForm, setPartForm] = useState({ inventory_id: '', part_name: '', quantity: 1, unit_price: 0 });
+  const [partForm, setPartForm] = useState({ inventory_id: '', part_name: '', quantity: 1, unit_price: 0, cost_price: 0 });
+  const [editPartForm, setEditPartForm] = useState({ id: null, part_name: '', quantity: 1, unit_price: 0, discount: 0, discount_type: 'fixed', cost_price: 0 });
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState({});
   
@@ -51,7 +55,9 @@ function JobDetail() {
         diagnosis: jobRes.data.diagnosis || '',
         labor_hours: jobRes.data.labor_hours || 0,
         labor_rate: jobRes.data.labor_rate || 1500,
-        notes: jobRes.data.notes || ''
+        notes: jobRes.data.notes || '',
+        fuel_charge: jobRes.data.fuel_charge || 0,
+        cleaning_charge: jobRes.data.cleaning_charge || 0
       });
     } catch (error) {
       console.error('Failed to load job:', error);
@@ -95,10 +101,61 @@ function JobDetail() {
     try {
       await addJobPart(id, partForm);
       setShowPartModal(false);
-      setPartForm({ inventory_id: '', part_name: '', quantity: 1, unit_price: 0 });
+      setPartForm({ inventory_id: '', part_name: '', quantity: 1, unit_price: 0, cost_price: 0 });
       loadData();
     } catch (error) {
       alert('Failed to add part');
+    }
+  };
+
+  // Open edit item modal
+  const handleEditItem = (item) => {
+    setEditItemForm({
+      id: item.id,
+      description: item.description,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      discount: item.discount || 0,
+      discount_type: item.discount_type || 'fixed'
+    });
+    setShowEditItemModal(true);
+  };
+
+  // Save edited item
+  const handleUpdateItem = async (e) => {
+    e.preventDefault();
+    try {
+      await updateJobItem(id, editItemForm.id, editItemForm);
+      setShowEditItemModal(false);
+      loadData();
+    } catch (error) {
+      alert('Failed to update service');
+    }
+  };
+
+  // Open edit part modal
+  const handleEditPart = (part) => {
+    setEditPartForm({
+      id: part.id,
+      part_name: part.part_name,
+      quantity: part.quantity,
+      unit_price: part.unit_price,
+      discount: part.discount || 0,
+      discount_type: part.discount_type || 'fixed',
+      cost_price: part.cost_price || 0
+    });
+    setShowEditPartModal(true);
+  };
+
+  // Save edited part
+  const handleUpdatePart = async (e) => {
+    e.preventDefault();
+    try {
+      await updateJobPart(id, editPartForm.id, editPartForm);
+      setShowEditPartModal(false);
+      loadData();
+    } catch (error) {
+      alert('Failed to update part');
     }
   };
 
@@ -260,7 +317,9 @@ function JobDetail() {
   const laborTotal = (editForm.labor_hours || 0) * (editForm.labor_rate || 0);
   const itemsTotal = job.items?.reduce((sum, i) => sum + i.total, 0) || 0;
   const partsTotal = job.parts?.reduce((sum, p) => sum + p.total, 0) || 0;
-  const grandTotal = laborTotal + itemsTotal + partsTotal;
+  const fuelCharge = parseFloat(editForm.fuel_charge) || 0;
+  const cleaningCharge = parseFloat(editForm.cleaning_charge) || 0;
+  const grandTotal = laborTotal + itemsTotal + partsTotal + fuelCharge + cleaningCharge;
 
   // Status action button configurations
   const statusActions = {
@@ -548,6 +607,14 @@ function JobDetail() {
                 <span>Parts</span>
                 <span className="currency">Rs. {partsTotal.toLocaleString()}</span>
               </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                <span>Fuel Charge</span>
+                <span className="currency">Rs. {fuelCharge.toLocaleString()}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                <span>Cleaning Agent</span>
+                <span className="currency">Rs. {cleaningCharge.toLocaleString()}</span>
+              </div>
               <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '1rem 0' }} />
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.25rem', fontWeight: '700' }}>
                 <span>Total</span>
@@ -592,7 +659,10 @@ function JobDetail() {
                       <td className="currency">Rs. {item.unit_price.toLocaleString()}</td>
                       <td className="currency">Rs. {item.total.toLocaleString()}</td>
                       <td>
-                        <button className="btn btn-ghost btn-sm" onClick={() => handleDeleteItem(item.id)}>
+                        <button className="btn btn-ghost btn-sm" onClick={() => handleEditItem(item)} title="Edit">
+                          <Edit2 size={16} />
+                        </button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => handleDeleteItem(item.id)} title="Delete">
                           <Trash2 size={16} />
                         </button>
                       </td>
@@ -634,12 +704,20 @@ function JobDetail() {
                       <td>
                         {part.part_name}
                         {part.inventory_id && <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>(from stock)</span>}
+                        {part.discount > 0 && (
+                          <div style={{ fontSize: '0.75rem', color: 'var(--success)' }}>
+                            Discount: {part.discount_type === 'percent' ? `${part.discount}%` : `Rs. ${part.discount}`}
+                          </div>
+                        )}
                       </td>
                       <td>{part.quantity}</td>
                       <td className="currency">Rs. {part.unit_price.toLocaleString()}</td>
                       <td className="currency">Rs. {part.total.toLocaleString()}</td>
                       <td>
-                        <button className="btn btn-ghost btn-sm" onClick={() => handleDeletePart(part.id)}>
+                        <button className="btn btn-ghost btn-sm" onClick={() => handleEditPart(part)} title="Edit">
+                          <Edit2 size={16} />
+                        </button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => handleDeletePart(part.id)} title="Delete">
                           <Trash2 size={16} />
                         </button>
                       </td>
@@ -653,6 +731,40 @@ function JobDetail() {
               No parts added yet
             </div>
           )}
+        </div>
+
+        {/* Additional Charges */}
+        <div className="card" style={{ marginTop: '1.5rem' }}>
+          <div className="card-header">
+            <h3 className="card-title">Additional Charges</h3>
+          </div>
+          <div className="card-body">
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Fuel Charge (Rs.)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  className="form-control"
+                  value={editForm.fuel_charge}
+                  onChange={(e) => setEditForm({...editForm, fuel_charge: parseFloat(e.target.value) || 0})}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Cleaning Agent (Rs.)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  className="form-control"
+                  value={editForm.cleaning_charge}
+                  onChange={(e) => setEditForm({...editForm, cleaning_charge: parseFloat(e.target.value) || 0})}
+                />
+              </div>
+            </div>
+            <button className="btn btn-primary" onClick={handleUpdateJob}>
+              Save Charges
+            </button>
+          </div>
         </div>
       </div>
 
@@ -802,6 +914,175 @@ function JobDetail() {
               <div className="modal-footer">
                 <button type="button" className="btn btn-secondary" onClick={() => setShowPartModal(false)}>Cancel</button>
                 <button type="submit" className="btn btn-primary">Add Part</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Service Modal */}
+      {showEditItemModal && (
+        <div className="modal-overlay" onClick={() => setShowEditItemModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="modal-title">Edit Service</h2>
+              <button className="modal-close" onClick={() => setShowEditItemModal(false)}>
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleUpdateItem}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label className="form-label">Description *</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={editItemForm.description}
+                    onChange={(e) => setEditItemForm({...editItemForm, description: e.target.value})}
+                    required
+                  />
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Quantity (Flat Rate = 5 min)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="form-control"
+                      value={editItemForm.quantity}
+                      onChange={(e) => setEditItemForm({...editItemForm, quantity: parseFloat(e.target.value) || 1})}
+                      min="0.01"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Unit Price (Rs.)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="form-control"
+                      value={editItemForm.unit_price}
+                      onChange={(e) => setEditItemForm({...editItemForm, unit_price: parseFloat(e.target.value) || 0})}
+                    />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Discount</label>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <input
+                        type="number"
+                        step="0.01"
+                        className="form-control"
+                        value={editItemForm.discount}
+                        onChange={(e) => setEditItemForm({...editItemForm, discount: parseFloat(e.target.value) || 0})}
+                        placeholder="0.00"
+                      />
+                      <Select
+                        value={editItemForm.discount_type}
+                        onChange={(e) => setEditItemForm({...editItemForm, discount_type: e.target.value})}
+                        name="discount_type"
+                        options={[
+                          { value: 'fixed', label: 'Rs.' },
+                          { value: 'percent', label: '%' }
+                        ]}
+                      />
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Net Total</label>
+                    <div className="form-control" style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
+                      Rs. {Math.max(0, (editItemForm.quantity * editItemForm.unit_price) - (editItemForm.discount_type === 'percent' ? (editItemForm.quantity * editItemForm.unit_price * editItemForm.discount / 100) : editItemForm.discount)).toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={() => setShowEditItemModal(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Save Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Part Modal */}
+      {showEditPartModal && (
+        <div className="modal-overlay" onClick={() => setShowEditPartModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="modal-title">Edit Part</h2>
+              <button className="modal-close" onClick={() => setShowEditPartModal(false)}>
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleUpdatePart}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label className="form-label">Part Name *</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={editPartForm.part_name}
+                    onChange={(e) => setEditPartForm({...editPartForm, part_name: e.target.value})}
+                    required
+                  />
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Quantity</label>
+                    <input
+                      type="number"
+                      className="form-control"
+                      value={editPartForm.quantity}
+                      onChange={(e) => setEditPartForm({...editPartForm, quantity: parseInt(e.target.value) || 1})}
+                      min="1"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Unit Price (Rs.)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="form-control"
+                      value={editPartForm.unit_price}
+                      onChange={(e) => setEditPartForm({...editPartForm, unit_price: parseFloat(e.target.value) || 0})}
+                    />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Discount</label>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <input
+                        type="number"
+                        step="0.01"
+                        className="form-control"
+                        value={editPartForm.discount}
+                        onChange={(e) => setEditPartForm({...editPartForm, discount: parseFloat(e.target.value) || 0})}
+                        placeholder="0.00"
+                      />
+                      <Select
+                        value={editPartForm.discount_type}
+                        onChange={(e) => setEditPartForm({...editPartForm, discount_type: e.target.value})}
+                        name="discount_type"
+                        options={[
+                          { value: 'fixed', label: 'Rs.' },
+                          { value: 'percent', label: '%' }
+                        ]}
+                      />
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Net Total</label>
+                    <div className="form-control" style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
+                      Rs. {Math.max(0, (editPartForm.quantity * editPartForm.unit_price) - (editPartForm.discount_type === 'percent' ? (editPartForm.quantity * editPartForm.unit_price * editPartForm.discount / 100) : editPartForm.discount)).toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={() => setShowEditPartModal(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Save Changes</button>
               </div>
             </form>
           </div>

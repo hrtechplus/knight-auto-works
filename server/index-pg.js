@@ -832,14 +832,16 @@ app.post('/api/jobs', async (req, res) => {
 
 app.put('/api/jobs/:id', async (req, res) => {
   try {
-    const { status, description, priority, technician, diagnosis, labor_hours, labor_rate, notes } = req.body;
+    const { status, description, priority, technician, diagnosis, labor_hours, labor_rate, notes, fuel_charge, cleaning_charge } = req.body;
     const job = await queryOne('SELECT * FROM jobs WHERE id = $1', [req.params.id]);
     if (!job) return res.status(404).json({ error: 'Job not found' });
     
     const labor_cost = (labor_hours || 0) * (labor_rate || job.labor_rate);
     const partsResult = await queryOne('SELECT COALESCE(SUM(total), 0) as total FROM job_parts WHERE job_id = $1', [req.params.id]);
     const parts_cost = parseFloat(partsResult.total);
-    const total_cost = labor_cost + parts_cost;
+    const fuelCost = parseFloat(fuel_charge) || job.fuel_charge || 0;
+    const cleaningCost = parseFloat(cleaning_charge) || job.cleaning_charge || 0;
+    const total_cost = labor_cost + parts_cost + fuelCost + cleaningCost;
     
     let started_at = job.started_at;
     let completed_at = job.completed_at;
@@ -850,10 +852,10 @@ app.put('/api/jobs/:id', async (req, res) => {
     await query(`
       UPDATE jobs SET status = $1, description = $2, priority = $3, technician = $4, diagnosis = $5,
       labor_hours = $6, labor_rate = $7, labor_cost = $8, parts_cost = $9, total_cost = $10,
-      notes = $11, started_at = $12, completed_at = $13 WHERE id = $14
-    `, [status || job.status, description, priority, technician, diagnosis, labor_hours, labor_rate, labor_cost, parts_cost, total_cost, notes, started_at, completed_at, req.params.id]);
+      notes = $11, started_at = $12, completed_at = $13, fuel_charge = $14, cleaning_charge = $15 WHERE id = $16
+    `, [status || job.status, description, priority, technician, diagnosis, labor_hours, labor_rate, labor_cost, parts_cost, total_cost, notes, started_at, completed_at, fuelCost, cleaningCost, req.params.id]);
     
-    res.json({ id: parseInt(req.params.id), ...req.body, labor_cost, parts_cost, total_cost });
+    res.json({ id: parseInt(req.params.id), ...req.body, labor_cost, parts_cost, total_cost, fuel_charge: fuelCost, cleaning_charge: cleaningCost });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -899,16 +901,38 @@ app.delete('/api/jobs/:jobId/items/:itemId', async (req, res) => {
   }
 });
 
+// Update job item
+app.put('/api/jobs/:jobId/items/:itemId', async (req, res) => {
+  try {
+    const { description, quantity, unit_price, discount, discount_type } = req.body;
+    let subtotal = (quantity || 1) * (unit_price || 0);
+    let discountAmount = 0;
+    if (discount && discount > 0) {
+      discountAmount = discount_type === 'percent' ? subtotal * (discount / 100) : discount;
+    }
+    const total = Math.max(0, subtotal - discountAmount);
+    
+    await query(
+      'UPDATE job_items SET description = $1, quantity = $2, unit_price = $3, total = $4, discount = $5, discount_type = $6 WHERE id = $7 AND job_id = $8',
+      [description, quantity || 1, unit_price || 0, total, discount || 0, discount_type || 'fixed', req.params.itemId, req.params.jobId]
+    );
+    
+    res.json({ id: parseInt(req.params.itemId), ...req.body, total });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Job Parts
 app.post('/api/jobs/:id/parts', async (req, res) => {
   try {
-    const { inventory_id, part_name, quantity, unit_price } = req.body;
+    const { inventory_id, part_name, quantity, unit_price, cost_price } = req.body;
     const total = (quantity || 1) * (unit_price || 0);
     
     const result = await transaction(async (client) => {
       const insertResult = await client.query(
-        'INSERT INTO job_parts (job_id, inventory_id, part_name, quantity, unit_price, total) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-        [req.params.id, inventory_id, part_name, quantity || 1, unit_price || 0, total]
+        'INSERT INTO job_parts (job_id, inventory_id, part_name, quantity, unit_price, total, cost_price) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
+        [req.params.id, inventory_id, part_name, quantity || 1, unit_price || 0, total, cost_price || 0]
       );
       
       if (inventory_id) {
@@ -922,8 +946,9 @@ app.post('/api/jobs/:id/parts', async (req, res) => {
       // Update job costs
       const partsResult = await client.query('SELECT COALESCE(SUM(total), 0) as total FROM job_parts WHERE job_id = $1', [req.params.id]);
       const parts_cost = parseFloat(partsResult.rows[0].total);
-      const jobResult = await client.query('SELECT labor_cost FROM jobs WHERE id = $1', [req.params.id]);
-      const total_cost = (parseFloat(jobResult.rows[0]?.labor_cost) || 0) + parts_cost;
+      const jobResult = await client.query('SELECT labor_cost, fuel_charge, cleaning_charge FROM jobs WHERE id = $1', [req.params.id]);
+      const job = jobResult.rows[0];
+      const total_cost = (parseFloat(job?.labor_cost) || 0) + parts_cost + (parseFloat(job?.fuel_charge) || 0) + (parseFloat(job?.cleaning_charge) || 0);
       await client.query('UPDATE jobs SET parts_cost = $1, total_cost = $2 WHERE id = $3', [parts_cost, total_cost, req.params.id]);
       
       return { id: insertResult.rows[0].id, ...req.body, total };
@@ -954,12 +979,64 @@ app.delete('/api/jobs/:jobId/parts/:partId', async (req, res) => {
       // Update job costs
       const partsResult = await client.query('SELECT COALESCE(SUM(total), 0) as total FROM job_parts WHERE job_id = $1', [req.params.jobId]);
       const parts_cost = parseFloat(partsResult.rows[0].total);
-      const jobResult = await client.query('SELECT labor_cost FROM jobs WHERE id = $1', [req.params.jobId]);
-      const total_cost = (parseFloat(jobResult.rows[0]?.labor_cost) || 0) + parts_cost;
+      const jobResult = await client.query('SELECT labor_cost, fuel_charge, cleaning_charge FROM jobs WHERE id = $1', [req.params.jobId]);
+      const job = jobResult.rows[0];
+      const total_cost = (parseFloat(job?.labor_cost) || 0) + parts_cost + (parseFloat(job?.fuel_charge) || 0) + (parseFloat(job?.cleaning_charge) || 0);
       await client.query('UPDATE jobs SET parts_cost = $1, total_cost = $2 WHERE id = $3', [parts_cost, total_cost, req.params.jobId]);
     });
     
     res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update job part (with discount)
+app.put('/api/jobs/:jobId/parts/:partId', async (req, res) => {
+  try {
+    const { part_name, quantity, unit_price, discount, discount_type, cost_price } = req.body;
+    
+    await transaction(async (client) => {
+      // Get existing part to check inventory changes
+      const partResult = await client.query('SELECT * FROM job_parts WHERE id = $1 AND job_id = $2', [req.params.partId, req.params.jobId]);
+      const existingPart = partResult.rows[0];
+      if (!existingPart) throw new Error('Part not found');
+      
+      // Calculate new total with discount
+      let subtotal = (quantity || 1) * (unit_price || 0);
+      let discountAmount = 0;
+      if (discount && discount > 0) {
+        discountAmount = discount_type === 'percent' ? subtotal * (discount / 100) : discount;
+      }
+      const total = Math.max(0, subtotal - discountAmount);
+      
+      // Handle inventory quantity changes if from inventory
+      if (existingPart.inventory_id) {
+        const qtyDiff = (quantity || 1) - existingPart.quantity;
+        if (qtyDiff !== 0) {
+          await client.query('UPDATE inventory SET quantity = quantity - $1 WHERE id = $2', [qtyDiff, existingPart.inventory_id]);
+          await client.query(
+            'INSERT INTO stock_movements (inventory_id, movement_type, quantity, reference_type, reference_id, notes) VALUES ($1, $2, $3, $4, $5, $6)',
+            [existingPart.inventory_id, qtyDiff > 0 ? 'out' : 'in', Math.abs(qtyDiff), 'job', req.params.jobId, 'Part quantity adjusted']
+          );
+        }
+      }
+      
+      await client.query(
+        'UPDATE job_parts SET part_name = $1, quantity = $2, unit_price = $3, total = $4, discount = $5, discount_type = $6, cost_price = $7 WHERE id = $8 AND job_id = $9',
+        [part_name, quantity || 1, unit_price || 0, total, discount || 0, discount_type || 'fixed', cost_price || 0, req.params.partId, req.params.jobId]
+      );
+      
+      // Update job costs
+      const partsRes = await client.query('SELECT COALESCE(SUM(total), 0) as total FROM job_parts WHERE job_id = $1', [req.params.jobId]);
+      const parts_cost = parseFloat(partsRes.rows[0].total);
+      const jobResult = await client.query('SELECT labor_cost, fuel_charge, cleaning_charge FROM jobs WHERE id = $1', [req.params.jobId]);
+      const job = jobResult.rows[0];
+      const total_cost = (parseFloat(job?.labor_cost) || 0) + parts_cost + (parseFloat(job?.fuel_charge) || 0) + (parseFloat(job?.cleaning_charge) || 0);
+      await client.query('UPDATE jobs SET parts_cost = $1, total_cost = $2 WHERE id = $3', [parts_cost, total_cost, req.params.jobId]);
+    });
+    
+    res.json({ id: parseInt(req.params.partId), ...req.body });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

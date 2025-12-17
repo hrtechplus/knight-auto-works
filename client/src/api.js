@@ -263,8 +263,10 @@ export const createJob = (data) => api.post('/jobs', data);
 export const updateJob = (id, data) => api.put(`/jobs/${id}`, data);
 export const deleteJob = (id) => api.delete(`/jobs/${id}`);
 export const addJobItem = (jobId, data) => api.post(`/jobs/${jobId}/items`, data);
+export const updateJobItem = (jobId, itemId, data) => api.put(`/jobs/${jobId}/items/${itemId}`, data);
 export const deleteJobItem = (jobId, itemId) => api.delete(`/jobs/${jobId}/items/${itemId}`);
 export const addJobPart = (jobId, data) => api.post(`/jobs/${jobId}/parts`, data);
+export const updateJobPart = (jobId, partId, data) => api.put(`/jobs/${jobId}/parts/${partId}`, data);
 export const deleteJobPart = (jobId, partId) => api.delete(`/jobs/${jobId}/parts/${partId}`);
 
 // ============================================

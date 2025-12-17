@@ -153,6 +153,8 @@ export async function initializeDatabase() {
       labor_cost NUMERIC(10,2) DEFAULT 0,
       parts_cost NUMERIC(10,2) DEFAULT 0,
       total_cost NUMERIC(10,2) DEFAULT 0,
+      fuel_charge NUMERIC(10,2) DEFAULT 0,
+      cleaning_charge NUMERIC(10,2) DEFAULT 0,
       warranty_until DATE,
       warranty_notes TEXT,
       notes TEXT,
@@ -181,7 +183,10 @@ export async function initializeDatabase() {
       part_name TEXT NOT NULL,
       quantity INTEGER DEFAULT 1,
       unit_price NUMERIC(10,2) DEFAULT 0,
-      total NUMERIC(10,2) DEFAULT 0
+      total NUMERIC(10,2) DEFAULT 0,
+      discount NUMERIC(10,2) DEFAULT 0,
+      discount_type TEXT DEFAULT 'fixed',
+      cost_price NUMERIC(10,2) DEFAULT 0
     );
 
     -- Stock movements for tracking
