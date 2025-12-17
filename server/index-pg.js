@@ -837,11 +837,13 @@ app.put('/api/jobs/:id', async (req, res) => {
     if (!job) return res.status(404).json({ error: 'Job not found' });
     
     const labor_cost = (labor_hours || 0) * (labor_rate || job.labor_rate);
+    const itemsResult = await queryOne('SELECT COALESCE(SUM(total), 0) as total FROM job_items WHERE job_id = $1', [req.params.id]);
+    const items_cost = parseFloat(itemsResult.total);
     const partsResult = await queryOne('SELECT COALESCE(SUM(total), 0) as total FROM job_parts WHERE job_id = $1', [req.params.id]);
     const parts_cost = parseFloat(partsResult.total);
     const fuelCost = parseFloat(fuel_charge) || job.fuel_charge || 0;
     const cleaningCost = parseFloat(cleaning_charge) || job.cleaning_charge || 0;
-    const total_cost = labor_cost + parts_cost + fuelCost + cleaningCost;
+    const total_cost = labor_cost + items_cost + parts_cost + fuelCost + cleaningCost;
     
     let started_at = job.started_at;
     let completed_at = job.completed_at;
@@ -944,11 +946,13 @@ app.post('/api/jobs/:id/parts', async (req, res) => {
       }
       
       // Update job costs
+      const itemsResult = await client.query('SELECT COALESCE(SUM(total), 0) as total FROM job_items WHERE job_id = $1', [req.params.id]);
+      const items_cost = parseFloat(itemsResult.rows[0].total);
       const partsResult = await client.query('SELECT COALESCE(SUM(total), 0) as total FROM job_parts WHERE job_id = $1', [req.params.id]);
       const parts_cost = parseFloat(partsResult.rows[0].total);
       const jobResult = await client.query('SELECT labor_cost, fuel_charge, cleaning_charge FROM jobs WHERE id = $1', [req.params.id]);
       const job = jobResult.rows[0];
-      const total_cost = (parseFloat(job?.labor_cost) || 0) + parts_cost + (parseFloat(job?.fuel_charge) || 0) + (parseFloat(job?.cleaning_charge) || 0);
+      const total_cost = (parseFloat(job?.labor_cost) || 0) + items_cost + parts_cost + (parseFloat(job?.fuel_charge) || 0) + (parseFloat(job?.cleaning_charge) || 0);
       await client.query('UPDATE jobs SET parts_cost = $1, total_cost = $2 WHERE id = $3', [parts_cost, total_cost, req.params.id]);
       
       return { id: insertResult.rows[0].id, ...req.body, total };
@@ -977,11 +981,13 @@ app.delete('/api/jobs/:jobId/parts/:partId', async (req, res) => {
       await client.query('DELETE FROM job_parts WHERE id = $1 AND job_id = $2', [req.params.partId, req.params.jobId]);
       
       // Update job costs
+      const itemsResult = await client.query('SELECT COALESCE(SUM(total), 0) as total FROM job_items WHERE job_id = $1', [req.params.jobId]);
+      const items_cost = parseFloat(itemsResult.rows[0].total);
       const partsResult = await client.query('SELECT COALESCE(SUM(total), 0) as total FROM job_parts WHERE job_id = $1', [req.params.jobId]);
       const parts_cost = parseFloat(partsResult.rows[0].total);
       const jobResult = await client.query('SELECT labor_cost, fuel_charge, cleaning_charge FROM jobs WHERE id = $1', [req.params.jobId]);
       const job = jobResult.rows[0];
-      const total_cost = (parseFloat(job?.labor_cost) || 0) + parts_cost + (parseFloat(job?.fuel_charge) || 0) + (parseFloat(job?.cleaning_charge) || 0);
+      const total_cost = (parseFloat(job?.labor_cost) || 0) + items_cost + parts_cost + (parseFloat(job?.fuel_charge) || 0) + (parseFloat(job?.cleaning_charge) || 0);
       await client.query('UPDATE jobs SET parts_cost = $1, total_cost = $2 WHERE id = $3', [parts_cost, total_cost, req.params.jobId]);
     });
     
@@ -1028,11 +1034,13 @@ app.put('/api/jobs/:jobId/parts/:partId', async (req, res) => {
       );
       
       // Update job costs
+      const itemsRes = await client.query('SELECT COALESCE(SUM(total), 0) as total FROM job_items WHERE job_id = $1', [req.params.jobId]);
+      const items_cost = parseFloat(itemsRes.rows[0].total);
       const partsRes = await client.query('SELECT COALESCE(SUM(total), 0) as total FROM job_parts WHERE job_id = $1', [req.params.jobId]);
       const parts_cost = parseFloat(partsRes.rows[0].total);
       const jobResult = await client.query('SELECT labor_cost, fuel_charge, cleaning_charge FROM jobs WHERE id = $1', [req.params.jobId]);
       const job = jobResult.rows[0];
-      const total_cost = (parseFloat(job?.labor_cost) || 0) + parts_cost + (parseFloat(job?.fuel_charge) || 0) + (parseFloat(job?.cleaning_charge) || 0);
+      const total_cost = (parseFloat(job?.labor_cost) || 0) + items_cost + parts_cost + (parseFloat(job?.fuel_charge) || 0) + (parseFloat(job?.cleaning_charge) || 0);
       await client.query('UPDATE jobs SET parts_cost = $1, total_cost = $2 WHERE id = $3', [parts_cost, total_cost, req.params.jobId]);
     });
     
