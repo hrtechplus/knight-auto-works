@@ -1499,7 +1499,64 @@ app.get('/api/invoices/:id/pdf', async (req, res) => {
     yPos += 20;
     let itemIndex = 0;
     
-    // Job Items
+    // Get job details for labor and extra charges
+    let job = null;
+    if (invoice.job_id) {
+      job = await queryOne('SELECT labor_hours, labor_rate, labor_cost, fuel_charge, cleaning_charge FROM jobs WHERE id = $1', [invoice.job_id]);
+    }
+    
+    // Labor charge (first row)
+    if (job && parseFloat(job.labor_cost) > 0) {
+      const rowHeight = 24;
+      if (itemIndex % 2 === 0) {
+        doc.rect(tableLeft, yPos, tableRight - tableLeft, rowHeight).fill('#f9fafb');
+      }
+      
+      doc.font('Helvetica').fontSize(9).fillColor(darkColor);
+      doc.text(`Labor Charge (${job.labor_hours}h × ${currencySymbol}${parseFloat(job.labor_rate).toFixed(2)}/hr)`, colDesc + 10, yPos + 5, { width: 260 });
+      doc.text(parseFloat(job.labor_hours).toString(), colQty, yPos + 5, { width: 50, align: 'center' });
+      doc.text(`${currencySymbol}${parseFloat(job.labor_rate).toFixed(2)}`, colRate, yPos + 5, { width: 60, align: 'right' });
+      doc.text(`${currencySymbol}${parseFloat(job.labor_cost).toFixed(2)}`, colTotal, yPos + 5, { width: 80, align: 'right' });
+      
+      yPos += rowHeight;
+      itemIndex++;
+    }
+    
+    // Fuel charge
+    if (job && parseFloat(job.fuel_charge) > 0) {
+      const rowHeight = 24;
+      if (itemIndex % 2 === 0) {
+        doc.rect(tableLeft, yPos, tableRight - tableLeft, rowHeight).fill('#f9fafb');
+      }
+      
+      doc.font('Helvetica').fontSize(9).fillColor(darkColor);
+      doc.text('Fuel Charge', colDesc + 10, yPos + 5, { width: 260 });
+      doc.text('1', colQty, yPos + 5, { width: 50, align: 'center' });
+      doc.text(`${currencySymbol}${parseFloat(job.fuel_charge).toFixed(2)}`, colRate, yPos + 5, { width: 60, align: 'right' });
+      doc.text(`${currencySymbol}${parseFloat(job.fuel_charge).toFixed(2)}`, colTotal, yPos + 5, { width: 80, align: 'right' });
+      
+      yPos += rowHeight;
+      itemIndex++;
+    }
+    
+    // Cleaning charge
+    if (job && parseFloat(job.cleaning_charge) > 0) {
+      const rowHeight = 24;
+      if (itemIndex % 2 === 0) {
+        doc.rect(tableLeft, yPos, tableRight - tableLeft, rowHeight).fill('#f9fafb');
+      }
+      
+      doc.font('Helvetica').fontSize(9).fillColor(darkColor);
+      doc.text('Cleaning Agent', colDesc + 10, yPos + 5, { width: 260 });
+      doc.text('1', colQty, yPos + 5, { width: 50, align: 'center' });
+      doc.text(`${currencySymbol}${parseFloat(job.cleaning_charge).toFixed(2)}`, colRate, yPos + 5, { width: 60, align: 'right' });
+      doc.text(`${currencySymbol}${parseFloat(job.cleaning_charge).toFixed(2)}`, colTotal, yPos + 5, { width: 80, align: 'right' });
+      
+      yPos += rowHeight;
+      itemIndex++;
+    }
+    
+    // Job Items (Services)
     items.forEach(item => {
       const rowHeight = 24; 
       if (itemIndex % 2 === 0) {

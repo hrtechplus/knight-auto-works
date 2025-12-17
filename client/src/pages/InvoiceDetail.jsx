@@ -297,7 +297,7 @@ function InvoiceDetail() {
         </div>
 
         {/* Line Items */}
-        {(invoice.items?.length > 0 || invoice.parts?.length > 0) && (
+        {(invoice.items?.length > 0 || invoice.parts?.length > 0 || invoice.job) && (
           <div className="card" style={{ marginTop: '1.5rem' }}>
             <div className="card-header">
               <h3 className="card-title">Line Items</h3>
@@ -313,6 +313,34 @@ function InvoiceDetail() {
                   </tr>
                 </thead>
                 <tbody>
+                  {/* Labor charge */}
+                  {invoice.job && parseFloat(invoice.job.labor_cost) > 0 && (
+                    <tr>
+                      <td>Labor Charge ({invoice.job.labor_hours}h × Rs.{invoice.job.labor_rate}/hr)</td>
+                      <td>{invoice.job.labor_hours}</td>
+                      <td className="currency">Rs. {parseFloat(invoice.job.labor_rate).toLocaleString()}</td>
+                      <td className="currency">Rs. {parseFloat(invoice.job.labor_cost).toLocaleString()}</td>
+                    </tr>
+                  )}
+                  {/* Fuel charge */}
+                  {invoice.job && parseFloat(invoice.job.fuel_charge) > 0 && (
+                    <tr>
+                      <td>Fuel Charge</td>
+                      <td>1</td>
+                      <td className="currency">Rs. {parseFloat(invoice.job.fuel_charge).toLocaleString()}</td>
+                      <td className="currency">Rs. {parseFloat(invoice.job.fuel_charge).toLocaleString()}</td>
+                    </tr>
+                  )}
+                  {/* Cleaning charge */}
+                  {invoice.job && parseFloat(invoice.job.cleaning_charge) > 0 && (
+                    <tr>
+                      <td>Cleaning Agent</td>
+                      <td>1</td>
+                      <td className="currency">Rs. {parseFloat(invoice.job.cleaning_charge).toLocaleString()}</td>
+                      <td className="currency">Rs. {parseFloat(invoice.job.cleaning_charge).toLocaleString()}</td>
+                    </tr>
+                  )}
+                  {/* Services */}
                   {invoice.items?.map(item => (
                     <tr key={`item-${item.id}`}>
                       <td>
@@ -328,9 +356,17 @@ function InvoiceDetail() {
                       <td className="currency">Rs. {item.total.toLocaleString()}</td>
                     </tr>
                   ))}
+                  {/* Parts */}
                   {invoice.parts?.map(part => (
                     <tr key={`part-${part.id}`}>
-                      <td>{part.part_name} <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>(Part)</span></td>
+                      <td>
+                        {part.part_name} <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>(Part)</span>
+                        {part.discount > 0 && (
+                          <div style={{ fontSize: '0.75rem', color: 'var(--success)' }}>
+                            Discount: {part.discount_type === 'percent' ? `${part.discount}%` : `Rs. ${part.discount}`}
+                          </div>
+                        )}
+                      </td>
                       <td>{part.quantity}</td>
                       <td className="currency">Rs. {part.unit_price.toLocaleString()}</td>
                       <td className="currency">Rs. {part.total.toLocaleString()}</td>
