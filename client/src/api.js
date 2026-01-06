@@ -157,8 +157,9 @@ api.interceptors.response.use(
 
 export const login = async (username, password) => {
   const response = await api.post('/auth/login', { username, password });
-  setToken(response.data.accessToken);
-  setRefreshToken(response.data.refreshToken);
+  setToken(response.data.token);
+  // Backend doesn't support refresh tokens yet
+  // setRefreshToken(response.data.refreshToken); 
   setStoredUser(response.data.user);
   return response.data;
 };
