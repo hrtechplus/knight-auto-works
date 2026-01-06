@@ -256,32 +256,34 @@ app.put('/api/settings', requireRole('admin', 'super_admin'), (req, res) => {
 app.get('/api/customers', (req, res) => {
   try {
     const { search } = req.query;
-    let customers;
-    if (search) {
-      customers = db.prepare(`
-        SELECT c.*, COUNT(v.id) as vehicle_count
-        FROM customers c
-        LEFT JOIN vehicles v ON c.id = v.customer_id
-        WHERE c.name LIKE ? OR c.phone LIKE ? OR c.email LIKE ?
-        GROUP BY c.id
-        ORDER BY c.name
-      `).all(`%${search}%`, `%${search}%`, `%${search}%`);
-    } else {
-      customers = db.prepare(`
-        SELECT c.*, COUNT(v.id) as vehicle_count
-        FROM customers c
-        LEFT JOIN vehicles v ON c.id = v.customer_id
-        GROUP BY c.id
-        ORDER BY c.created_at DESC
-      `).all();
-    }
+    
+    // Fetch all customers with vehicle count
+    let customers = db.prepare(`
+      SELECT c.*, COUNT(v.id) as vehicle_count
+      FROM customers c
+      LEFT JOIN vehicles v ON c.id = v.customer_id
+      GROUP BY c.id
+      ORDER BY c.created_at DESC
+    `).all();
     
     // Decrypt sensitive PII for all customers
-    const decryptedCustomers = customers.map(c => ({
+    let decryptedCustomers = customers.map(c => ({
       ...c,
       phone: c.phone ? decrypt(c.phone) : null,
       email: c.email ? decrypt(c.email) : null
     }));
+    
+    // Filter by search term AFTER decryption (since phone/email are encrypted)
+    if (search) {
+      const searchLower = search.toLowerCase();
+      decryptedCustomers = decryptedCustomers.filter(c => 
+        (c.name && c.name.toLowerCase().includes(searchLower)) ||
+        (c.phone && c.phone.toLowerCase().includes(searchLower)) ||
+        (c.email && c.email.toLowerCase().includes(searchLower))
+      );
+      // Sort by name when searching
+      decryptedCustomers.sort((a, b) => a.name.localeCompare(b.name));
+    }
     
     res.json(decryptedCustomers);
   } catch (error) {
