@@ -640,13 +640,16 @@ app.post('/api/jobs', (req, res) => {
 
 app.put('/api/jobs/:id', (req, res) => {
   try {
-    const { status, description, priority, technician, diagnosis, labor_hours, labor_rate, notes } = req.body;
+    const { status, description, priority, technician, diagnosis, labor_hours, labor_rate, notes, fuel_charge, cleaning_charge } = req.body;
     const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.id);
     if (!job) return res.status(404).json({ error: 'Job not found' });
     
     const labor_cost = (labor_hours || 0) * (labor_rate || job.labor_rate);
+    const items_cost = db.prepare('SELECT COALESCE(SUM(total), 0) as total FROM job_items WHERE job_id = ?').get(req.params.id).total;
     const parts_cost = db.prepare('SELECT COALESCE(SUM(total), 0) as total FROM job_parts WHERE job_id = ?').get(req.params.id).total;
-    const total_cost = labor_cost + parts_cost;
+    const fuelCost = parseFloat(fuel_charge) || job.fuel_charge || 0;
+    const cleaningCost = parseFloat(cleaning_charge) || job.cleaning_charge || 0;
+    const total_cost = labor_cost + items_cost + parts_cost + fuelCost + cleaningCost;
     
     let started_at = job.started_at;
     let completed_at = job.completed_at;
@@ -661,12 +664,12 @@ app.put('/api/jobs/:id', (req, res) => {
     db.prepare(`
       UPDATE jobs SET status = ?, description = ?, priority = ?, technician = ?, diagnosis = ?,
       labor_hours = ?, labor_rate = ?, labor_cost = ?, parts_cost = ?, total_cost = ?,
-      notes = ?, started_at = ?, completed_at = ?
+      notes = ?, started_at = ?, completed_at = ?, fuel_charge = ?, cleaning_charge = ?
       WHERE id = ?
     `).run(status || job.status, description, priority, technician, diagnosis, labor_hours, labor_rate, 
-           labor_cost, parts_cost, total_cost, notes, started_at, completed_at, req.params.id);
+           labor_cost, parts_cost, total_cost, notes, started_at, completed_at, fuelCost, cleaningCost, req.params.id);
     
-    res.json({ id: req.params.id, ...req.body, labor_cost, parts_cost, total_cost });
+    res.json({ id: req.params.id, ...req.body, labor_cost, parts_cost, total_cost, fuel_charge: fuelCost, cleaning_charge: cleaningCost });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

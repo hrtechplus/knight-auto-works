@@ -273,6 +273,22 @@ try {
   db.exec(`ALTER TABLE job_items ADD COLUMN discount_type TEXT DEFAULT 'fixed'`); // 'fixed' or 'percent'
 } catch (e) { /* Column already exists */ }
 
+// Fuel and Cleaning charges migration
+try {
+  db.exec(`ALTER TABLE jobs ADD COLUMN fuel_charge REAL DEFAULT 0`);
+} catch (e) { /* Column already exists */ }
+
+try {
+  db.exec(`ALTER TABLE jobs ADD COLUMN cleaning_charge REAL DEFAULT 0`);
+} catch (e) { /* Column already exists */ }
+
+// Part discounts migration
+try {
+  db.exec(`ALTER TABLE job_parts ADD COLUMN discount REAL DEFAULT 0`);
+  db.exec(`ALTER TABLE job_parts ADD COLUMN discount_type TEXT DEFAULT 'fixed'`);
+} catch (e) { /* Column already exists */ }
+
+
 // Seed default category rates if not exist
 const settings = db.prepare('SELECT key FROM settings').all().map(s => s.key);
 if (!settings.includes('labor_rate_asian')) {
