@@ -1114,16 +1114,22 @@ app.get('/api/invoices/:id', (req, res) => {
     `).get(req.params.id);
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
     
+    // Decrypt customer PII
+    invoice.customer_phone = invoice.customer_phone ? decrypt(invoice.customer_phone) : null;
+    invoice.customer_email = invoice.customer_email ? decrypt(invoice.customer_email) : null;
+    
     const payments = db.prepare('SELECT * FROM payments WHERE invoice_id = ? ORDER BY created_at').all(req.params.id);
     
+    let job = null;
     let items = [];
     let parts = [];
     if (invoice.job_id) {
+      job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(invoice.job_id);
       items = db.prepare('SELECT * FROM job_items WHERE job_id = ?').all(invoice.job_id);
       parts = db.prepare('SELECT * FROM job_parts WHERE job_id = ?').all(invoice.job_id);
     }
     
-    res.json({ ...invoice, payments, items, parts });
+    res.json({ ...invoice, payments, job, items, parts });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
