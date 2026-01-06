@@ -723,6 +723,36 @@ app.delete('/api/jobs/:jobId/items/:itemId', requireRole('admin', 'super_admin')
   }
 });
 
+// Update job item (service)
+app.put('/api/jobs/:jobId/items/:itemId', (req, res) => {
+  try {
+    const { description, quantity, unit_price, discount, discount_type } = req.body;
+    
+    // Calculate total: (Qty * Rate) - Discount
+    let subtotal = (quantity || 1) * (unit_price || 0);
+    let discountAmount = 0;
+    
+    if (discount && discount > 0) {
+      if (discount_type === 'percent') {
+        discountAmount = subtotal * (discount / 100);
+      } else {
+        discountAmount = discount;
+      }
+    }
+    
+    const total = Math.max(0, subtotal - discountAmount);
+    
+    db.prepare(`
+      UPDATE job_items SET description = ?, quantity = ?, unit_price = ?, total = ?, discount = ?, discount_type = ?
+      WHERE id = ? AND job_id = ?
+    `).run(description, quantity || 1, unit_price || 0, total, discount || 0, discount_type || 'fixed', req.params.itemId, req.params.jobId);
+    
+    res.json({ id: parseInt(req.params.itemId), ...req.body, total });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Job Parts
 app.post('/api/jobs/:id/parts', (req, res) => {
   try {
@@ -783,6 +813,56 @@ app.delete('/api/jobs/:jobId/parts/:partId', requireRole('admin', 'super_admin')
     db.prepare('UPDATE jobs SET parts_cost = ?, total_cost = ? WHERE id = ?').run(parts_cost, total_cost, req.params.jobId);
     
     res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update job part
+app.put('/api/jobs/:jobId/parts/:partId', (req, res) => {
+  try {
+    const { part_name, quantity, unit_price, discount, discount_type } = req.body;
+    
+    const result = db.transaction(() => {
+      // Get existing part to check inventory changes
+      const existingPart = db.prepare('SELECT * FROM job_parts WHERE id = ? AND job_id = ?').get(req.params.partId, req.params.jobId);
+      if (!existingPart) throw new Error('Part not found');
+      
+      // Calculate new total with discount
+      let subtotal = (quantity || 1) * (unit_price || 0);
+      let discountAmount = 0;
+      if (discount && discount > 0) {
+        discountAmount = discount_type === 'percent' ? subtotal * (discount / 100) : discount;
+      }
+      const total = Math.max(0, subtotal - discountAmount);
+      
+      // Handle inventory quantity changes if from inventory
+      if (existingPart.inventory_id) {
+        const qtyDiff = (quantity || 1) - existingPart.quantity;
+        if (qtyDiff !== 0) {
+          db.prepare('UPDATE inventory SET quantity = quantity - ? WHERE id = ?').run(qtyDiff, existingPart.inventory_id);
+          db.prepare(`
+            INSERT INTO stock_movements (inventory_id, movement_type, quantity, reference_type, reference_id, notes)
+            VALUES (?, ?, ?, 'job', ?, 'Part quantity adjusted')
+          `).run(existingPart.inventory_id, qtyDiff > 0 ? 'out' : 'in', Math.abs(qtyDiff), req.params.jobId);
+        }
+      }
+      
+      db.prepare(`
+        UPDATE job_parts SET part_name = ?, quantity = ?, unit_price = ?, total = ?, discount = ?, discount_type = ?
+        WHERE id = ? AND job_id = ?
+      `).run(part_name, quantity || 1, unit_price || 0, total, discount || 0, discount_type || 'fixed', req.params.partId, req.params.jobId);
+      
+      // Update job costs
+      const parts_cost = db.prepare('SELECT COALESCE(SUM(total), 0) as total FROM job_parts WHERE job_id = ?').get(req.params.jobId).total;
+      const job = db.prepare('SELECT labor_cost FROM jobs WHERE id = ?').get(req.params.jobId);
+      const total_cost = (job?.labor_cost || 0) + parts_cost;
+      db.prepare('UPDATE jobs SET parts_cost = ?, total_cost = ? WHERE id = ?').run(parts_cost, total_cost, req.params.jobId);
+      
+      return { id: parseInt(req.params.partId), ...req.body, total };
+    })();
+    
+    res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
