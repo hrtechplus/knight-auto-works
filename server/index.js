@@ -147,6 +147,29 @@ function generateInvoiceNumber() {
   return `${prefix}-${year}-${String(nextNum).padStart(4, '0')}`;
 }
 
+/**
+ * Recalculates and updates the total_cost for a job.
+ * Includes: labor_cost + items_cost + parts_cost + fuel_charge + cleaning_charge
+ * Call this after any change to job items, parts, or charges.
+ */
+function recalculateJobTotal(jobId) {
+  const job = db.prepare('SELECT labor_cost, fuel_charge, cleaning_charge FROM jobs WHERE id = ?').get(jobId);
+  if (!job) return null;
+  
+  const items_cost = db.prepare('SELECT COALESCE(SUM(total), 0) as total FROM job_items WHERE job_id = ?').get(jobId).total;
+  const parts_cost = db.prepare('SELECT COALESCE(SUM(total), 0) as total FROM job_parts WHERE job_id = ?').get(jobId).total;
+  
+  const labor_cost = job.labor_cost || 0;
+  const fuel_charge = job.fuel_charge || 0;
+  const cleaning_charge = job.cleaning_charge || 0;
+  
+  const total_cost = labor_cost + items_cost + parts_cost + fuel_charge + cleaning_charge;
+  
+  db.prepare('UPDATE jobs SET parts_cost = ?, total_cost = ? WHERE id = ?').run(parts_cost, total_cost, jobId);
+  
+  return { labor_cost, items_cost, parts_cost, fuel_charge, cleaning_charge, total_cost };
+}
+
 // ============================================
 // DASHBOARD ROUTES
 // ============================================
@@ -711,6 +734,9 @@ app.post('/api/jobs/:id/items', (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(req.params.id, description, quantity || 1, unit_price || 0, total, discount || 0, discount_type || 'fixed');
     
+    // Recalculate job total after adding item
+    recalculateJobTotal(req.params.id);
+    
     res.json({ id: result.lastInsertRowid, ...req.body, total });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -720,6 +746,10 @@ app.post('/api/jobs/:id/items', (req, res) => {
 app.delete('/api/jobs/:jobId/items/:itemId', requireRole('admin', 'super_admin'), (req, res) => {
   try {
     db.prepare('DELETE FROM job_items WHERE id = ? AND job_id = ?').run(req.params.itemId, req.params.jobId);
+    
+    // Recalculate job total after deleting item
+    recalculateJobTotal(req.params.jobId);
+    
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -749,6 +779,9 @@ app.put('/api/jobs/:jobId/items/:itemId', (req, res) => {
       UPDATE job_items SET description = ?, quantity = ?, unit_price = ?, total = ?, discount = ?, discount_type = ?
       WHERE id = ? AND job_id = ?
     `).run(description, quantity || 1, unit_price || 0, total, discount || 0, discount_type || 'fixed', req.params.itemId, req.params.jobId);
+    
+    // Recalculate job total after updating item
+    recalculateJobTotal(req.params.jobId);
     
     res.json({ id: parseInt(req.params.itemId), ...req.body, total });
   } catch (error) {
@@ -781,11 +814,8 @@ app.post('/api/jobs/:id/parts', (req, res) => {
         `).run(inventory_id, quantity || 1, req.params.id, `Used in Job #${req.params.id}`);
       }
       
-      // Update job parts cost
-      const parts_cost = db.prepare('SELECT COALESCE(SUM(total), 0) as total FROM job_parts WHERE job_id = ?').get(req.params.id).total;
-      const job = db.prepare('SELECT labor_cost FROM jobs WHERE id = ?').get(req.params.id);
-      const total_cost = (job?.labor_cost || 0) + parts_cost;
-      db.prepare('UPDATE jobs SET parts_cost = ?, total_cost = ? WHERE id = ?').run(parts_cost, total_cost, req.params.id);
+      // Recalculate job total (includes labor, items, parts, fuel, cleaning)
+      recalculateJobTotal(req.params.id);
       
       return { id: insertResult.lastInsertRowid, ...req.body, total };
     })();
@@ -809,11 +839,8 @@ app.delete('/api/jobs/:jobId/parts/:partId', requireRole('admin', 'super_admin')
     }
     db.prepare('DELETE FROM job_parts WHERE id = ? AND job_id = ?').run(req.params.partId, req.params.jobId);
     
-    // Update job parts cost
-    const parts_cost = db.prepare('SELECT COALESCE(SUM(total), 0) as total FROM job_parts WHERE job_id = ?').get(req.params.jobId).total;
-    const job = db.prepare('SELECT labor_cost FROM jobs WHERE id = ?').get(req.params.jobId);
-    const total_cost = (job?.labor_cost || 0) + parts_cost;
-    db.prepare('UPDATE jobs SET parts_cost = ?, total_cost = ? WHERE id = ?').run(parts_cost, total_cost, req.params.jobId);
+    // Recalculate job total (includes labor, items, parts, fuel, cleaning)
+    recalculateJobTotal(req.params.jobId);
     
     res.json({ success: true });
   } catch (error) {
@@ -856,11 +883,8 @@ app.put('/api/jobs/:jobId/parts/:partId', (req, res) => {
         WHERE id = ? AND job_id = ?
       `).run(part_name, quantity || 1, unit_price || 0, total, discount || 0, discount_type || 'fixed', req.params.partId, req.params.jobId);
       
-      // Update job costs
-      const parts_cost = db.prepare('SELECT COALESCE(SUM(total), 0) as total FROM job_parts WHERE job_id = ?').get(req.params.jobId).total;
-      const job = db.prepare('SELECT labor_cost FROM jobs WHERE id = ?').get(req.params.jobId);
-      const total_cost = (job?.labor_cost || 0) + parts_cost;
-      db.prepare('UPDATE jobs SET parts_cost = ?, total_cost = ? WHERE id = ?').run(parts_cost, total_cost, req.params.jobId);
+      // Recalculate job total (includes labor, items, parts, fuel, cleaning)
+      recalculateJobTotal(req.params.jobId);
       
       return { id: parseInt(req.params.partId), ...req.body, total };
     })();
