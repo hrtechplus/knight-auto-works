@@ -1,0 +1,13 @@
+{
+  "projects": {},
+  "targets": {
+    "knight-auto-works-f128c": {
+      "hosting": {
+        "app": [
+          "knight-auto-app"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

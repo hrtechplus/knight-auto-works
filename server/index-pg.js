@@ -2131,16 +2131,18 @@ app.get('*', (req, res) => {
 // START SERVER
 // ============================================
 
-init().then(() => {
-  app.listen(PORT, () => {
-    console.log(`
+// Start server immediately to satisfy Cloud Run probe
+app.listen(PORT, () => {
+  console.log(`
 🔧 Knight Auto Works Server (PostgreSQL) running!
 📍 http://localhost:${PORT}
 📊 API endpoints ready
 ✅ Health check: http://localhost:${PORT}/api/health
-    `);
-  });
-}).catch(err => {
+  `);
+});
+
+// Initialize database in background
+init().catch(err => {
   console.error('Failed to initialize database:', err);
-  process.exit(1);
+  // Do not exit process, so we can see logs
 });
