@@ -70,7 +70,7 @@ export default function Login({ onLogin }) {
             boxShadow: '0 0 40px rgba(249, 115, 22, 0.3)'
           }}>
             <img 
-              src="/logoknight.jpg" 
+              src="/bg-removed_logo_small.png" 
               alt="Knight Auto Works" 
               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
             />

@@ -53,7 +53,7 @@ function AppContent({ user, onLogout }) {
           <div className="logo">
             <div className="logo-icon" style={{ overflow: 'hidden' }}>
               <img 
-                src="/logoknight.jpg" 
+                src="/bg-removed_logo_small.png" 
                 alt="Knight Auto" 
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />

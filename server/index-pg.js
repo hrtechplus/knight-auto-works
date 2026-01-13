@@ -701,13 +701,17 @@ app.delete('/api/customers/:id', requireAdminOrAbove, async (req, res) => {
     const customer = await queryOne('SELECT * FROM customers WHERE id = $1', [req.params.id]);
     if (!customer) return res.status(404).json(createError(ErrorCodes.NOT_FOUND, 'Customer not found'));
     
-    const openJobs = await queryOne(`
-      SELECT COUNT(*) as count FROM jobs j JOIN vehicles v ON j.vehicle_id = v.id
-      WHERE v.customer_id = $1 AND j.status NOT IN ('completed', 'cancelled', 'invoiced')
+    const history = await queryOne(`
+      SELECT 
+        (SELECT COUNT(*) FROM jobs j JOIN vehicles v ON j.vehicle_id = v.id WHERE v.customer_id = $1) as job_count,
+        (SELECT COUNT(*) FROM invoices WHERE customer_id = $1) as invoice_count
     `, [req.params.id]);
     
-    if (parseInt(openJobs.count) > 0) {
-      return res.status(400).json(createError(ErrorCodes.BUSINESS_RULE, `Cannot delete customer with ${openJobs.count} open job(s)`));
+    const jobCount = parseInt(history.job_count);
+    const invoiceCount = parseInt(history.invoice_count);
+    
+    if (jobCount > 0 || invoiceCount > 0) {
+      return res.status(400).json(createError(ErrorCodes.BUSINESS_RULE, `Cannot delete customer with existing history (${jobCount} jobs, ${invoiceCount} invoices)`));
     }
     
     await query('DELETE FROM customers WHERE id = $1', [req.params.id]);
@@ -1533,7 +1537,7 @@ app.get('/api/invoices/:id/pdf', async (req, res) => {
     const lightGray = '#f5f5f5';
     
     // ========== HEADER WITH LOGO ==========
-    const logoPath = path.join(__dirname, 'assets', 'logo.jpg');
+    const logoPath = path.join(__dirname, 'assets', 'bg-removed_logo_small.png');
     try {
       doc.image(logoPath, 50, 40, { width: 70 });
     } catch (e) {

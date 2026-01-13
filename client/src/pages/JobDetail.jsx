@@ -314,12 +314,12 @@ function JobDetail() {
     );
   }
 
-  const laborTotal = (editForm.labor_hours || 0) * (editForm.labor_rate || 0);
-  const itemsTotal = job.items?.reduce((sum, i) => sum + i.total, 0) || 0;
-  const partsTotal = job.parts?.reduce((sum, p) => sum + p.total, 0) || 0;
+  const laborTotal = Math.round(((parseFloat(editForm.labor_hours) || 0) * (parseFloat(editForm.labor_rate) || 0)) * 100) / 100;
+  const itemsTotal = Math.round((job.items?.reduce((sum, i) => sum + (parseFloat(i.total) || 0), 0) || 0) * 100) / 100;
+  const partsTotal = Math.round((job.parts?.reduce((sum, p) => sum + (parseFloat(p.total) || 0), 0) || 0) * 100) / 100;
   const fuelCharge = parseFloat(editForm.fuel_charge) || 0;
   const cleaningCharge = parseFloat(editForm.cleaning_charge) || 0;
-  const grandTotal = laborTotal + itemsTotal + partsTotal + fuelCharge + cleaningCharge;
+  const grandTotal = Math.round((laborTotal + itemsTotal + partsTotal + fuelCharge + cleaningCharge) * 100) / 100;
 
   // Status action button configurations
   const statusActions = {

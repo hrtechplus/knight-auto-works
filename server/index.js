@@ -1281,7 +1281,7 @@ app.get('/api/invoices/:id/pdf', (req, res) => {
     const lightGray = '#f5f5f5';
     
     // ========== HEADER WITH LOGO ==========
-    const logoPath = path.join(__dirname, 'assets', 'logo.jpg');
+    const logoPath = path.join(__dirname, 'assets', 'bg-removed_logo_small.png');
     try {
       doc.image(logoPath, 50, 40, { width: 70 });
     } catch (e) {

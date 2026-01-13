@@ -1,7 +1,9 @@
 import axios from 'axios';
 
-// Use relative URL in production, localhost in development
-const API_BASE = import.meta.env.DEV ? 'http://localhost:3001/api' : '/api';
+// Use relative URL in development, full URL in production (Cross-Project)
+const API_BASE = import.meta.env.DEV 
+  ? 'http://localhost:3001/api' 
+  : 'https://knight-auto-backend-929855308504.us-central1.run.app/api';
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -157,16 +159,28 @@ api.interceptors.response.use(
 
 export const login = async (username, password) => {
   const response = await api.post('/auth/login', { username, password });
-  setToken(response.data.token);
-  // Backend doesn't support refresh tokens yet
-  // setRefreshToken(response.data.refreshToken); 
+  // Handle both backend formats (token vs accessToken)
+  const accessToken = response.data.accessToken || response.data.token;
+  setToken(accessToken);
+  
+  if (response.data.refreshToken) {
+    setRefreshToken(response.data.refreshToken);
+  }
+  
   setStoredUser(response.data.user);
   return response.data;
 };
 
 export const loginWithFirebase = async (token) => {
   const response = await api.post('/auth/firebase-login', { token });
-  setToken(response.data.token);
+  // Handle both backend formats (token vs accessToken)
+  const accessToken = response.data.accessToken || response.data.token;
+  setToken(accessToken);
+  
+  if (response.data.refreshToken) {
+    setRefreshToken(response.data.refreshToken);
+  }
+  
   setStoredUser(response.data.user);
   return response.data;
 };
