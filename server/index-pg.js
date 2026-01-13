@@ -293,6 +293,41 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
+// Public Job Tracking
+app.get('/api/track-job', async (req, res) => {
+  try {
+    const { job_number, plate } = req.query;
+    
+    if (!job_number || !plate) {
+      return res.status(400).json(createError(ErrorCodes.VALIDATION_ERROR, 'Job number and plate number are required'));
+    }
+    
+    const job = await queryOne(`
+      SELECT j.job_number, j.status, j.created_at, j.completed_at, 
+             v.make, v.model, v.plate_number, c.name as customer_name
+      FROM jobs j
+      JOIN vehicles v ON j.vehicle_id = v.id
+      JOIN customers c ON v.customer_id = c.id
+      WHERE j.job_number = $1 AND REPLACE(v.plate_number, ' ', '') ILIKE REPLACE($2, ' ', '')
+    `, [job_number, plate]);
+    
+    if (!job) {
+      // Return 404 but don't leak if it was job num or plate that failed
+      return res.status(404).json(createError(ErrorCodes.NOT_FOUND, 'Job not found matching these details'));
+    }
+    
+    res.json({
+      job_number: job.job_number,
+      status: job.status,
+      created_at: job.created_at,
+      completed_at: job.completed_at,
+      vehicle: `${job.make} ${job.model} (${job.plate_number})`
+    });
+  } catch (error) {
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
+  }
+});
+
 // Protected routes middleware
 app.use('/api', authMiddleware);
 
@@ -960,12 +995,38 @@ app.put('/api/jobs/:id', async (req, res) => {
 
 app.delete('/api/jobs/:id', requireAdminOrAbove, async (req, res) => {
   try {
-    await query('DELETE FROM jobs WHERE id = $1', [req.params.id]);
+    // 1. Check for constraints (Invoices)
+    const invoice = await queryOne('SELECT id FROM invoices WHERE job_id = $1', [req.params.id]);
+    if (invoice) {
+      return res.status(400).json(createError(ErrorCodes.BUSINESS_RULE, 'Cannot delete job that has been invoiced'));
+    }
+
+    await transaction(async (client) => {
+      // 2. Restore Inventory
+      const parts = await client.query('SELECT * FROM job_parts WHERE job_id = $1', [req.params.id]);
+      
+      for (const part of parts.rows) {
+        if (part.inventory_id) {
+          // Restore stock
+          await client.query('UPDATE inventory SET quantity = quantity + $1 WHERE id = $2', [part.quantity, part.inventory_id]);
+          // Log movement
+          await client.query(
+            'INSERT INTO stock_movements (inventory_id, movement_type, quantity, reference_type, reference_id, notes) VALUES ($1, $2, $3, $4, $5, $6)',
+            [part.inventory_id, 'in', part.quantity, 'job', req.params.id, 'Stock returned from deleted job']
+          );
+        }
+      }
+
+      // 3. Delete Job (Cascade will handle items/parts rows)
+      await client.query('DELETE FROM jobs WHERE id = $1', [req.params.id]);
+    });
+
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
+
 
 // Job Items
 app.post('/api/jobs/:id/items', async (req, res) => {

@@ -678,12 +678,12 @@ app.put('/api/jobs/:id', (req, res) => {
     const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.id);
     if (!job) return res.status(404).json({ error: 'Job not found' });
     
-    const labor_cost = (labor_hours || 0) * (labor_rate || job.labor_rate);
+    const labor_cost = round((labor_hours || 0) * (labor_rate || job.labor_rate));
     const items_cost = db.prepare('SELECT COALESCE(SUM(total), 0) as total FROM job_items WHERE job_id = ?').get(req.params.id).total;
     const parts_cost = db.prepare('SELECT COALESCE(SUM(total), 0) as total FROM job_parts WHERE job_id = ?').get(req.params.id).total;
     const fuelCost = parseFloat(fuel_charge) || job.fuel_charge || 0;
     const cleaningCost = parseFloat(cleaning_charge) || job.cleaning_charge || 0;
-    const total_cost = labor_cost + items_cost + parts_cost + fuelCost + cleaningCost;
+    const total_cost = round(labor_cost + items_cost + parts_cost + fuelCost + cleaningCost);
     
     let started_at = job.started_at;
     let completed_at = job.completed_at;
@@ -711,7 +711,34 @@ app.put('/api/jobs/:id', (req, res) => {
 
 app.delete('/api/jobs/:id', requireRole('admin', 'super_admin'), (req, res) => {
   try {
-    db.prepare('DELETE FROM jobs WHERE id = ?').run(req.params.id);
+    // 1. Check for constraints (Invoices)
+    const invoice = db.prepare('SELECT id FROM invoices WHERE job_id = ?').get(req.params.id);
+    if (invoice) {
+      return res.status(400).json(createError(ErrorCodes.BUSINESS_RULE, 'Cannot delete job that has been invoiced'));
+    }
+
+    // 2. Use transaction to restore inventory and delete job
+    db.transaction(() => {
+      // Get all parts used in this job
+      const parts = db.prepare('SELECT * FROM job_parts WHERE job_id = ?').all(req.params.id);
+      
+      // Restore inventory for each part
+      for (const part of parts) {
+        if (part.inventory_id) {
+          // Restore stock
+          db.prepare('UPDATE inventory SET quantity = quantity + ? WHERE id = ?').run(part.quantity, part.inventory_id);
+          // Log movement
+          db.prepare(`
+            INSERT INTO stock_movements (inventory_id, movement_type, quantity, reference_type, reference_id, notes)
+            VALUES (?, 'in', ?, 'job', ?, 'Stock returned from deleted job')
+          `).run(part.inventory_id, part.quantity, req.params.id);
+        }
+      }
+
+      // Delete job (CASCADE will handle job_items and job_parts)
+      db.prepare('DELETE FROM jobs WHERE id = ?').run(req.params.id);
+    })();
+
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });

@@ -222,7 +222,7 @@ function Suppliers() {
 
       {/* Add/Edit Supplier Modal */}
       {showModal && (
-        <div className="modal-overlay" onClick={closeModal}>
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && closeModal()}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">{editingSupplier ? 'Edit Supplier' : 'Add Supplier'}</h2>

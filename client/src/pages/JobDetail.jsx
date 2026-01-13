@@ -451,7 +451,7 @@ function JobDetail() {
 
       {/* Status Change Confirmation Dialog */}
       {statusConfirm.isOpen && (
-        <div className="modal-overlay" onClick={() => setStatusConfirm({ isOpen: false, action: '', status: '' })}>
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setStatusConfirm({ isOpen: false, action: '', status: '' })}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">Confirm Action</h2>
@@ -770,7 +770,7 @@ function JobDetail() {
 
       {/* Add Service Modal */}
       {showItemModal && (
-        <div className="modal-overlay" onClick={() => setShowItemModal(false)}>
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowItemModal(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">Add Service</h2>
@@ -853,7 +853,7 @@ function JobDetail() {
 
       {/* Add Part Modal */}
       {showPartModal && (
-        <div className="modal-overlay" onClick={() => setShowPartModal(false)}>
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowPartModal(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">Add Part</h2>
@@ -922,7 +922,7 @@ function JobDetail() {
 
       {/* Edit Service Modal */}
       {showEditItemModal && (
-        <div className="modal-overlay" onClick={() => setShowEditItemModal(false)}>
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowEditItemModal(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">Edit Service</h2>
@@ -1007,7 +1007,7 @@ function JobDetail() {
 
       {/* Edit Part Modal */}
       {showEditPartModal && (
-        <div className="modal-overlay" onClick={() => setShowEditPartModal(false)}>
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowEditPartModal(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">Edit Part</h2>
