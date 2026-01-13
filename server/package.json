@@ -5,7 +5,8 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "node index.js",
+    "start": "node index-pg.js",
+    "start:sqlite": "node index.js",
     "start:pg": "node index-pg.js",
     "dev": "node --watch index.js",
     "dev:pg": "node --watch index-pg.js"
@@ -17,6 +18,7 @@
     "dotenv": "^17.2.3",
     "express": "^4.21.0",
     "express-rate-limit": "^8.2.1",
+    "firebase-admin": "^13.6.0",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
     "nodemailer": "^7.0.11",

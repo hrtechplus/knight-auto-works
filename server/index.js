@@ -148,6 +148,14 @@ function generateInvoiceNumber() {
 }
 
 /**
+ * Rounds a number to 2 decimal places to avoid floating point errors.
+ * Example: 32.9699999 -> 32.97
+ */
+function round(num) {
+  return Math.round((num || 0) * 100) / 100;
+}
+
+/**
  * Recalculates and updates the total_cost for a job.
  * Includes: labor_cost + items_cost + parts_cost + fuel_charge + cleaning_charge
  * Call this after any change to job items, parts, or charges.
@@ -159,15 +167,18 @@ function recalculateJobTotal(jobId) {
   const items_cost = db.prepare('SELECT COALESCE(SUM(total), 0) as total FROM job_items WHERE job_id = ?').get(jobId).total;
   const parts_cost = db.prepare('SELECT COALESCE(SUM(total), 0) as total FROM job_parts WHERE job_id = ?').get(jobId).total;
   
-  const labor_cost = job.labor_cost || 0;
-  const fuel_charge = job.fuel_charge || 0;
-  const cleaning_charge = job.cleaning_charge || 0;
+  const labor_cost = round(job.labor_cost);
+  const fuel_charge = round(job.fuel_charge);
+  const cleaning_charge = round(job.cleaning_charge);
+  const rounded_items_cost = round(items_cost);
+  const rounded_parts_cost = round(parts_cost);
   
-  const total_cost = labor_cost + items_cost + parts_cost + fuel_charge + cleaning_charge;
+  const total_cost = round(labor_cost + rounded_items_cost + rounded_parts_cost + fuel_charge + cleaning_charge);
   
-  db.prepare('UPDATE jobs SET parts_cost = ?, total_cost = ? WHERE id = ?').run(parts_cost, total_cost, jobId);
+  db.prepare('UPDATE jobs SET labor_cost = ?, parts_cost = ?, fuel_charge = ?, cleaning_charge = ?, total_cost = ? WHERE id = ?')
+    .run(labor_cost, rounded_parts_cost, fuel_charge, cleaning_charge, total_cost, jobId);
   
-  return { labor_cost, items_cost, parts_cost, fuel_charge, cleaning_charge, total_cost };
+  return { labor_cost, items_cost: rounded_items_cost, parts_cost: rounded_parts_cost, fuel_charge, cleaning_charge, total_cost };
 }
 
 // ============================================
@@ -716,18 +727,18 @@ app.post('/api/jobs/:id/items', (req, res) => {
     const { description, quantity, unit_price, discount, discount_type } = req.body;
     
     // Calculate total: (Qty * Rate) - Discount
-    let subtotal = (quantity || 1) * (unit_price || 0);
+    let subtotal = round((quantity || 1) * (unit_price || 0));
     let discountAmount = 0;
     
     if (discount && discount > 0) {
       if (discount_type === 'percent') {
-        discountAmount = subtotal * (discount / 100);
+        discountAmount = round(subtotal * (discount / 100));
       } else {
-        discountAmount = discount;
+        discountAmount = round(discount);
       }
     }
     
-    const total = Math.max(0, subtotal - discountAmount);
+    const total = round(Math.max(0, subtotal - discountAmount));
     
     const result = db.prepare(`
       INSERT INTO job_items (job_id, description, quantity, unit_price, total, discount, discount_type)
@@ -762,18 +773,18 @@ app.put('/api/jobs/:jobId/items/:itemId', (req, res) => {
     const { description, quantity, unit_price, discount, discount_type } = req.body;
     
     // Calculate total: (Qty * Rate) - Discount
-    let subtotal = (quantity || 1) * (unit_price || 0);
+    let subtotal = round((quantity || 1) * (unit_price || 0));
     let discountAmount = 0;
     
     if (discount && discount > 0) {
       if (discount_type === 'percent') {
-        discountAmount = subtotal * (discount / 100);
+        discountAmount = round(subtotal * (discount / 100));
       } else {
-        discountAmount = discount;
+        discountAmount = round(discount);
       }
     }
     
-    const total = Math.max(0, subtotal - discountAmount);
+    const total = round(Math.max(0, subtotal - discountAmount));
     
     db.prepare(`
       UPDATE job_items SET description = ?, quantity = ?, unit_price = ?, total = ?, discount = ?, discount_type = ?
@@ -797,7 +808,7 @@ app.post('/api/jobs/:id/parts', (req, res) => {
 
     const result = db.transaction(() => {
       const { inventory_id, part_name, quantity, unit_price } = req.body;
-      const total = (quantity || 1) * (unit_price || 0);
+      const total = round((quantity || 1) * (unit_price || 0));
       
       const insertResult = db.prepare(`
         INSERT INTO job_parts (job_id, inventory_id, part_name, quantity, unit_price, total)
@@ -859,12 +870,12 @@ app.put('/api/jobs/:jobId/parts/:partId', (req, res) => {
       if (!existingPart) throw new Error('Part not found');
       
       // Calculate new total with discount
-      let subtotal = (quantity || 1) * (unit_price || 0);
+      let subtotal = round((quantity || 1) * (unit_price || 0));
       let discountAmount = 0;
       if (discount && discount > 0) {
-        discountAmount = discount_type === 'percent' ? subtotal * (discount / 100) : discount;
+        discountAmount = discount_type === 'percent' ? round(subtotal * (discount / 100)) : round(discount);
       }
-      const total = Math.max(0, subtotal - discountAmount);
+      const total = round(Math.max(0, subtotal - discountAmount));
       
       // Handle inventory quantity changes if from inventory
       if (existingPart.inventory_id) {
@@ -1163,13 +1174,14 @@ app.post('/api/invoices', (req, res) => {
   try {
     const { job_id, customer_id, subtotal, tax_rate, discount, due_date, notes } = req.body;
     const invoice_number = generateInvoiceNumber();
-    const tax_amount = (subtotal || 0) * ((tax_rate || 0) / 100);
-    const total = (subtotal || 0) + tax_amount - (discount || 0);
+    const subtotalCalc = round(subtotal);
+    const tax_amount = round(subtotalCalc * ((tax_rate || 0) / 100));
+    const total = round(subtotalCalc + tax_amount - (discount || 0));
     
     const result = db.prepare(`
       INSERT INTO invoices (invoice_number, job_id, customer_id, subtotal, tax_rate, tax_amount, discount, total, balance, due_date, notes)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(invoice_number, job_id, customer_id, subtotal || 0, tax_rate || 0, tax_amount, discount || 0, total, total, due_date, notes);
+    `).run(invoice_number, job_id, customer_id, subtotalCalc, tax_rate || 0, tax_amount, discount || 0, total, total, due_date, notes);
     
     // Update job status to invoiced
     if (job_id) {
@@ -1193,9 +1205,9 @@ app.post('/api/invoices/from-job/:jobId', (req, res) => {
       if (!job) throw new Error('Job not found');
       
       const taxRate = db.prepare('SELECT value FROM settings WHERE key = ?').get('tax_rate')?.value || 0;
-      const subtotal = job.total_cost;
-      const tax_amount = subtotal * (parseFloat(taxRate) / 100);
-      const total = subtotal + tax_amount;
+      const subtotal = round(job.total_cost);
+      const tax_amount = round(subtotal * (parseFloat(taxRate) / 100));
+      const total = round(subtotal + tax_amount);
       const invoice_number = generateInvoiceNumber();
       
       const insertResult = db.prepare(`
@@ -1554,6 +1566,42 @@ app.post('/api/invoices/:id/payments', (req, res) => {
     `).run(newAmountPaid, newBalance, newStatus, newStatus === 'paid' ? new Date().toISOString() : null, req.params.id);
     
     res.json({ id: result.lastInsertRowid, ...req.body, new_balance: newBalance, status: newStatus });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/invoices/:id/payments/:paymentId', requireRole('admin', 'super_admin'), (req, res) => {
+  try {
+    const { id, paymentId } = req.params;
+    
+    // Check if payment exists and matches invoice
+    const payment = db.prepare('SELECT * FROM payments WHERE id = ? AND invoice_id = ?').get(paymentId, id);
+    if (!payment) return res.status(404).json({ error: 'Payment not found' });
+    
+    const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(id);
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+    
+    // Delete payment
+    db.prepare('DELETE FROM payments WHERE id = ?').run(paymentId);
+    
+    // Recalculate invoice balance
+    const newAmountPaid = round(invoice.amount_paid - payment.amount);
+    const newBalance = round(invoice.total - newAmountPaid);
+    const newStatus = newBalance <= 0 ? 'paid' : 'partial'; // If balance > 0, it's partial or open (but we track 'partial' for any payment made usually, here simpler logic)
+    
+    // Note: If no payments left, status should be 'pending' or 'open', but 'partial' is fine for "not paid". 
+    // Actually, if amount_paid is 0, status should arguably be 'open' or 'issued'. 
+    // But keeping it consistent with 'pending'/'inflow'. Let's check invoice statuses used.
+    // 'paid', 'partial', 'pending' (from logic elsewhere).
+    const finalStatus = newBalance <= 0 ? 'paid' : (newAmountPaid > 0 ? 'partial' : 'pending');
+    
+    db.prepare(`
+      UPDATE invoices SET amount_paid = ?, balance = ?, status = ?, paid_at = ?
+      WHERE id = ?
+    `).run(newAmountPaid, newBalance, finalStatus, finalStatus === 'paid' ? new Date().toISOString() : null, id);
+    
+    res.json({ success: true, new_balance: newBalance, status: finalStatus });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

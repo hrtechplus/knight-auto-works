@@ -164,6 +164,13 @@ export const login = async (username, password) => {
   return response.data;
 };
 
+export const loginWithFirebase = async (token) => {
+  const response = await api.post('/auth/firebase-login', { token });
+  setToken(response.data.token);
+  setStoredUser(response.data.user);
+  return response.data;
+};
+
 export const logout = async () => {
   try {
     const refreshToken = getRefreshToken();

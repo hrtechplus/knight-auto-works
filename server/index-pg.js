@@ -12,6 +12,17 @@ import {
   ErrorCodes, createError, validate, schemas, 
   canTransitionJobStatus 
 } from './validation.js';
+import admin from 'firebase-admin';
+
+// Initialize Firebase Admin
+if (!admin.apps.length) {
+  try {
+    admin.initializeApp();
+    console.log('✅ Firebase Admin Initialized');
+  } catch (e) {
+    console.warn('⚠️ Firebase Admin Initialization Failed:', e.message);
+  }
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -165,6 +176,47 @@ app.post('/api/auth/login', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
+  }
+});
+
+// Firebase Login
+app.post('/api/auth/firebase-login', async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token) return res.status(400).json(createError(ErrorCodes.VALIDATION_ERROR, 'Token required'));
+
+    const decodedToken = await admin.auth().verifyIdToken(token);
+    const { email } = decodedToken;
+    
+    // Auto-map Google Email to internal Username
+    const user = await queryOne('SELECT * FROM users WHERE username = $1', [email]);
+    
+    if (!user) {
+      return res.status(401).json(createError(ErrorCodes.UNAUTHORIZED, `User ${email} not found. Please ask an admin to create a user with this email as username.`));
+    }
+    
+    if (!user.is_active) {
+      return res.status(401).json(createError(ErrorCodes.UNAUTHORIZED, 'Account is disabled'));
+    }
+
+    // Success
+    const ip = req.ip || 'unknown';
+    await recordLoginAttempt(user.username, ip, true);
+    await query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1', [user.id]);
+    
+    const accessToken = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRES });
+    const refreshToken = await generateRefreshToken(user.id);
+    
+    res.json({ 
+      accessToken, 
+      refreshToken,
+      expiresIn: 900,
+      user: { id: user.id, username: user.username, name: user.name, role: user.role } 
+    });
+    
+  } catch (error) {
+    console.error('Firebase Auth Error:', error);
+    res.status(401).json(createError(ErrorCodes.UNAUTHORIZED, 'Invalid authentication token'));
   }
 });
 
@@ -436,6 +488,45 @@ async function generateInvoiceNumber() {
     nextNum = parseInt(parts[2]) + 1;
   }
   return `${prefix}-${year}-${String(nextNum).padStart(4, '0')}`;
+}
+
+/**
+ * Rounds a number to 2 decimal places to avoid floating point errors.
+ * Example: 32.9699999 -> 32.97
+ */
+function round(num) {
+  return Math.round((num || 0) * 100) / 100;
+}
+
+/**
+ * Recalculates and updates the total_cost for a job.
+ * Includes: labor_cost + items_cost + parts_cost + fuel_charge + cleaning_charge
+ * Call this after any change to job items, parts, or charges.
+ */
+async function recalculateJobTotal(jobId) {
+  const job = await queryOne('SELECT labor_cost, fuel_charge, cleaning_charge FROM jobs WHERE id = $1', [jobId]);
+  if (!job) return null;
+  
+  const itemsRes = await queryOne('SELECT COALESCE(SUM(total), 0) as total FROM job_items WHERE job_id = $1', [jobId]);
+  const partsRes = await queryOne('SELECT COALESCE(SUM(total), 0) as total FROM job_parts WHERE job_id = $1', [jobId]);
+  
+  const items_cost = parseFloat(itemsRes.total || 0);
+  const parts_cost = parseFloat(partsRes.total || 0);
+  
+  const labor_cost = round(parseFloat(job.labor_cost));
+  const fuel_charge = round(parseFloat(job.fuel_charge));
+  const cleaning_charge = round(parseFloat(job.cleaning_charge));
+  const rounded_items_cost = round(items_cost);
+  const rounded_parts_cost = round(parts_cost);
+  
+  const total_cost = round(labor_cost + rounded_items_cost + rounded_parts_cost + fuel_charge + cleaning_charge);
+  
+  await query(
+    'UPDATE jobs SET labor_cost = $1, parts_cost = $2, fuel_charge = $3, cleaning_charge = $4, total_cost = $5 WHERE id = $6',
+    [labor_cost, rounded_parts_cost, fuel_charge, cleaning_charge, total_cost, jobId]
+  );
+  
+  return { labor_cost, items_cost: rounded_items_cost, parts_cost: rounded_parts_cost, fuel_charge, cleaning_charge, total_cost };
 }
 
 // ============================================
@@ -876,17 +967,26 @@ app.delete('/api/jobs/:id', requireAdminOrAbove, async (req, res) => {
 app.post('/api/jobs/:id/items', async (req, res) => {
   try {
     const { description, quantity, unit_price, discount, discount_type } = req.body;
-    let subtotal = (quantity || 1) * (unit_price || 0);
+    let subtotal = round((quantity || 1) * (unit_price || 0));
     let discountAmount = 0;
+    
     if (discount && discount > 0) {
-      discountAmount = discount_type === 'percent' ? subtotal * (discount / 100) : discount;
+      if (discount_type === 'percent') {
+        discountAmount = round(subtotal * (discount / 100));
+      } else {
+        discountAmount = round(discount);
+      }
     }
-    const total = Math.max(0, subtotal - discountAmount);
+    
+    const total = round(Math.max(0, subtotal - discountAmount));
     
     const result = await query(
       'INSERT INTO job_items (job_id, description, quantity, unit_price, total, discount, discount_type) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
       [req.params.id, description, quantity || 1, unit_price || 0, total, discount || 0, discount_type || 'fixed']
     );
+    
+    // Recalculate job total
+    await recalculateJobTotal(req.params.id);
     
     res.json({ id: result.rows[0].id, ...req.body, total });
   } catch (error) {
@@ -897,6 +997,7 @@ app.post('/api/jobs/:id/items', async (req, res) => {
 app.delete('/api/jobs/:jobId/items/:itemId', async (req, res) => {
   try {
     await query('DELETE FROM job_items WHERE id = $1 AND job_id = $2', [req.params.itemId, req.params.jobId]);
+    await recalculateJobTotal(req.params.jobId);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -907,19 +1008,27 @@ app.delete('/api/jobs/:jobId/items/:itemId', async (req, res) => {
 app.put('/api/jobs/:jobId/items/:itemId', async (req, res) => {
   try {
     const { description, quantity, unit_price, discount, discount_type } = req.body;
-    let subtotal = (quantity || 1) * (unit_price || 0);
+    let subtotal = round((quantity || 1) * (unit_price || 0));
     let discountAmount = 0;
+    
     if (discount && discount > 0) {
-      discountAmount = discount_type === 'percent' ? subtotal * (discount / 100) : discount;
+      if (discount_type === 'percent') {
+        discountAmount = round(subtotal * (discount / 100));
+      } else {
+        discountAmount = round(discount);
+      }
     }
-    const total = Math.max(0, subtotal - discountAmount);
+    
+    const total = round(Math.max(0, subtotal - discountAmount));
     
     await query(
       'UPDATE job_items SET description = $1, quantity = $2, unit_price = $3, total = $4, discount = $5, discount_type = $6 WHERE id = $7 AND job_id = $8',
       [description, quantity || 1, unit_price || 0, total, discount || 0, discount_type || 'fixed', req.params.itemId, req.params.jobId]
     );
     
-    res.json({ id: parseInt(req.params.itemId), ...req.body, total });
+    const totals = await recalculateJobTotal(req.params.jobId);
+    
+    res.json({ id: parseInt(req.params.itemId), ...req.body, total, job_total: totals?.total_cost });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -929,7 +1038,7 @@ app.put('/api/jobs/:jobId/items/:itemId', async (req, res) => {
 app.post('/api/jobs/:id/parts', async (req, res) => {
   try {
     const { inventory_id, part_name, quantity, unit_price, cost_price } = req.body;
-    const total = (quantity || 1) * (unit_price || 0);
+    const total = round((quantity || 1) * (unit_price || 0));
     
     const result = await transaction(async (client) => {
       const insertResult = await client.query(
@@ -945,14 +1054,19 @@ app.post('/api/jobs/:id/parts', async (req, res) => {
         );
       }
       
-      // Update job costs
+      // Update job costs with rounding
       const itemsResult = await client.query('SELECT COALESCE(SUM(total), 0) as total FROM job_items WHERE job_id = $1', [req.params.id]);
-      const items_cost = parseFloat(itemsResult.rows[0].total);
+      const items_cost = round(parseFloat(itemsResult.rows[0].total));
       const partsResult = await client.query('SELECT COALESCE(SUM(total), 0) as total FROM job_parts WHERE job_id = $1', [req.params.id]);
-      const parts_cost = parseFloat(partsResult.rows[0].total);
+      const parts_cost = round(parseFloat(partsResult.rows[0].total));
       const jobResult = await client.query('SELECT labor_cost, fuel_charge, cleaning_charge FROM jobs WHERE id = $1', [req.params.id]);
       const job = jobResult.rows[0];
-      const total_cost = (parseFloat(job?.labor_cost) || 0) + items_cost + parts_cost + (parseFloat(job?.fuel_charge) || 0) + (parseFloat(job?.cleaning_charge) || 0);
+      
+      const labor_cost = round(parseFloat(job?.labor_cost));
+      const fuel_charge = round(parseFloat(job?.fuel_charge));
+      const cleaning_charge = round(parseFloat(job?.cleaning_charge));
+      const total_cost = round(labor_cost + items_cost + parts_cost + fuel_charge + cleaning_charge);
+      
       await client.query('UPDATE jobs SET parts_cost = $1, total_cost = $2 WHERE id = $3', [parts_cost, total_cost, req.params.id]);
       
       return { id: insertResult.rows[0].id, ...req.body, total };
@@ -980,14 +1094,19 @@ app.delete('/api/jobs/:jobId/parts/:partId', async (req, res) => {
       
       await client.query('DELETE FROM job_parts WHERE id = $1 AND job_id = $2', [req.params.partId, req.params.jobId]);
       
-      // Update job costs
+      // Update job costs with rounding
       const itemsResult = await client.query('SELECT COALESCE(SUM(total), 0) as total FROM job_items WHERE job_id = $1', [req.params.jobId]);
-      const items_cost = parseFloat(itemsResult.rows[0].total);
+      const items_cost = round(parseFloat(itemsResult.rows[0].total));
       const partsResult = await client.query('SELECT COALESCE(SUM(total), 0) as total FROM job_parts WHERE job_id = $1', [req.params.jobId]);
-      const parts_cost = parseFloat(partsResult.rows[0].total);
+      const parts_cost = round(parseFloat(partsResult.rows[0].total));
       const jobResult = await client.query('SELECT labor_cost, fuel_charge, cleaning_charge FROM jobs WHERE id = $1', [req.params.jobId]);
       const job = jobResult.rows[0];
-      const total_cost = (parseFloat(job?.labor_cost) || 0) + items_cost + parts_cost + (parseFloat(job?.fuel_charge) || 0) + (parseFloat(job?.cleaning_charge) || 0);
+      
+      const labor_cost = round(parseFloat(job?.labor_cost));
+      const fuel_charge = round(parseFloat(job?.fuel_charge));
+      const cleaning_charge = round(parseFloat(job?.cleaning_charge));
+      const total_cost = round(labor_cost + items_cost + parts_cost + fuel_charge + cleaning_charge);
+      
       await client.query('UPDATE jobs SET parts_cost = $1, total_cost = $2 WHERE id = $3', [parts_cost, total_cost, req.params.jobId]);
     });
     
@@ -1009,12 +1128,12 @@ app.put('/api/jobs/:jobId/parts/:partId', async (req, res) => {
       if (!existingPart) throw new Error('Part not found');
       
       // Calculate new total with discount
-      let subtotal = (quantity || 1) * (unit_price || 0);
+      let subtotal = round((quantity || 1) * (unit_price || 0));
       let discountAmount = 0;
       if (discount && discount > 0) {
-        discountAmount = discount_type === 'percent' ? subtotal * (discount / 100) : discount;
+        discountAmount = discount_type === 'percent' ? round(subtotal * (discount / 100)) : round(discount);
       }
-      const total = Math.max(0, subtotal - discountAmount);
+      const total = round(Math.max(0, subtotal - discountAmount));
       
       // Handle inventory quantity changes if from inventory
       if (existingPart.inventory_id) {
@@ -1033,14 +1152,19 @@ app.put('/api/jobs/:jobId/parts/:partId', async (req, res) => {
         [part_name, quantity || 1, unit_price || 0, total, discount || 0, discount_type || 'fixed', cost_price || 0, req.params.partId, req.params.jobId]
       );
       
-      // Update job costs
-      const itemsRes = await client.query('SELECT COALESCE(SUM(total), 0) as total FROM job_items WHERE job_id = $1', [req.params.jobId]);
-      const items_cost = parseFloat(itemsRes.rows[0].total);
-      const partsRes = await client.query('SELECT COALESCE(SUM(total), 0) as total FROM job_parts WHERE job_id = $1', [req.params.jobId]);
-      const parts_cost = parseFloat(partsRes.rows[0].total);
+      // Update job costs with rounding
+      const itemsResult = await client.query('SELECT COALESCE(SUM(total), 0) as total FROM job_items WHERE job_id = $1', [req.params.jobId]);
+      const items_cost = round(parseFloat(itemsResult.rows[0].total));
+      const partsResult = await client.query('SELECT COALESCE(SUM(total), 0) as total FROM job_parts WHERE job_id = $1', [req.params.jobId]);
+      const parts_cost = round(parseFloat(partsResult.rows[0].total));
       const jobResult = await client.query('SELECT labor_cost, fuel_charge, cleaning_charge FROM jobs WHERE id = $1', [req.params.jobId]);
       const job = jobResult.rows[0];
-      const total_cost = (parseFloat(job?.labor_cost) || 0) + items_cost + parts_cost + (parseFloat(job?.fuel_charge) || 0) + (parseFloat(job?.cleaning_charge) || 0);
+      
+      const labor_cost = round(parseFloat(job?.labor_cost));
+      const fuel_charge = round(parseFloat(job?.fuel_charge));
+      const cleaning_charge = round(parseFloat(job?.cleaning_charge));
+      const total_cost = round(labor_cost + items_cost + parts_cost + fuel_charge + cleaning_charge);
+      
       await client.query('UPDATE jobs SET parts_cost = $1, total_cost = $2 WHERE id = $3', [parts_cost, total_cost, req.params.jobId]);
     });
     
@@ -1289,18 +1413,23 @@ app.post('/api/invoices', async (req, res) => {
   try {
     const { job_id, customer_id, subtotal, tax_rate, tax_amount, discount, total, due_date, notes } = req.body;
     const invoice_number = await generateInvoiceNumber();
-    const balance = total;
+    
+    // Recalculate with rounding to be safe
+    const subtotalCalc = round(subtotal);
+    const taxVal = round(subtotalCalc * ((tax_rate || 0) / 100));
+    const totalCalc = round(subtotalCalc + taxVal - (discount || 0));
+    const balance = totalCalc;
     
     const result = await query(
       'INSERT INTO invoices (invoice_number, job_id, customer_id, subtotal, tax_rate, tax_amount, discount, total, balance, due_date, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id',
-      [invoice_number, job_id, customer_id, subtotal, tax_rate || 0, tax_amount || 0, discount || 0, total, balance, due_date, notes]
+      [invoice_number, job_id, customer_id, subtotalCalc, tax_rate || 0, taxVal, discount || 0, totalCalc, balance, due_date, notes]
     );
     
     if (job_id) {
       await query("UPDATE jobs SET status = 'invoiced' WHERE id = $1", [job_id]);
     }
     
-    res.json({ id: result.rows[0].id, invoice_number, ...req.body, balance });
+    res.json({ id: result.rows[0].id, invoice_number, ...req.body, total: totalCalc, balance });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1326,9 +1455,9 @@ app.post('/api/invoices/from-job/:jobId', async (req, res) => {
       const taxResult = await client.query("SELECT value FROM settings WHERE key = 'tax_rate'");
       const taxRate = parseFloat(taxResult.rows[0]?.value || 0);
       
-      const subtotal = parseFloat(job.total_cost) || 0;
-      const tax_amount = subtotal * (taxRate / 100);
-      const total = subtotal + tax_amount;
+      const subtotal = round(parseFloat(job.total_cost));
+      const tax_amount = round(subtotal * (taxRate / 100));
+      const total = round(subtotal + tax_amount);
       const invoice_number = await generateInvoiceNumber();
       
       // Create invoice
@@ -1691,8 +1820,8 @@ app.post('/api/invoices/:id/payments', async (req, res) => {
       // Update invoice
       const invoiceResult = await client.query('SELECT total, amount_paid FROM invoices WHERE id = $1', [req.params.id]);
       const invoice = invoiceResult.rows[0];
-      const newAmountPaid = parseFloat(invoice.amount_paid) + parseFloat(amount);
-      const newBalance = parseFloat(invoice.total) - newAmountPaid;
+      const newAmountPaid = round(parseFloat(invoice.amount_paid) + parseFloat(amount));
+      const newBalance = round(parseFloat(invoice.total) - newAmountPaid);
       const newStatus = newBalance <= 0 ? 'paid' : 'partial';
       
       await client.query(
@@ -1704,6 +1833,45 @@ app.post('/api/invoices/:id/payments', async (req, res) => {
     });
     
     res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete payment
+app.delete('/api/invoices/:id/payments/:paymentId', async (req, res) => {
+  try {
+    const { id, paymentId } = req.params;
+    
+    await transaction(async (client) => {
+      // Get payment to subtract
+      const paymentResult = await client.query('SELECT amount FROM payments WHERE id = $1 AND invoice_id = $2', [paymentId, id]);
+      if (paymentResult.rows.length === 0) throw new Error('Payment not found');
+      const amount = parseFloat(paymentResult.rows[0].amount);
+      
+      // Delete payment
+      await client.query('DELETE FROM payments WHERE id = $1', [paymentId]);
+      
+      // Recalculate invoice balance
+      const invoiceResult = await client.query('SELECT total, amount_paid FROM invoices WHERE id = $1', [id]);
+      const invoice = invoiceResult.rows[0];
+      
+      const newAmountPaid = round(parseFloat(invoice.amount_paid) - amount);
+      const sanitizedAmountPaid = Math.max(0, newAmountPaid);
+      const newBalance = round(parseFloat(invoice.total) - sanitizedAmountPaid);
+      
+      // Determine status
+      let newStatus = 'pending';
+      if (newBalance <= 0) newStatus = 'paid';
+      else if (sanitizedAmountPaid > 0) newStatus = 'partial';
+      
+      await client.query(
+        'UPDATE invoices SET amount_paid = $1, balance = $2, status = $3, paid_at = $4 WHERE id = $5',
+        [sanitizedAmountPaid, newBalance, newStatus, newStatus === 'paid' ? new Date().toISOString() : null, id]
+      );
+    });
+    
+    res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Lock, User, AlertCircle, Wrench } from 'lucide-react';
-import { login } from '../api';
+import { login, loginWithFirebase } from '../api';
+import { signInWithPopup } from 'firebase/auth';
+import { auth, googleProvider } from '../firebase-config';
 
 export default function Login({ onLogin }) {
   const [username, setUsername] = useState('');
@@ -18,6 +20,22 @@ export default function Login({ onLogin }) {
       onLogin(data.user);
     } catch (err) {
       setError(err.message || 'Login failed. Please check your credentials.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const token = await result.user.getIdToken();
+      const data = await loginWithFirebase(token);
+      onLogin(data.user);
+    } catch (err) {
+      console.error('Google Login Error:', err);
+      setError(err.message || 'Google Sign-In failed.');
     } finally {
       setLoading(false);
     }
@@ -159,6 +177,36 @@ export default function Login({ onLogin }) {
             )}
           </button>
         </form>
+
+        <div style={{ display: 'flex', alignItems: 'center', margin: '1.5rem 0' }}>
+          <div style={{ flex: 1, height: '1px', background: 'var(--border)' }}></div>
+          <span style={{ padding: '0 0.5rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>OR</span>
+          <div style={{ flex: 1, height: '1px', background: 'var(--border)' }}></div>
+        </div>
+
+        <button
+          onClick={handleGoogleLogin}
+          disabled={loading}
+          type="button"
+          style={{
+            width: '100%',
+            padding: '0.875rem',
+            fontSize: '1rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '0.75rem',
+            background: 'white',
+            color: '#333',
+            border: '1px solid #ddd',
+            borderRadius: 'var(--radius-md)',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            transition: 'all 0.2s'
+          }}
+        >
+          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" width="20" height="20" />
+          Sign in with Google
+        </button>
 
 
       </div>
