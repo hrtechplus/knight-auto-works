@@ -931,14 +931,14 @@ app.put('/api/jobs/:id', async (req, res) => {
     const job = await queryOne('SELECT * FROM jobs WHERE id = $1', [req.params.id]);
     if (!job) return res.status(404).json({ error: 'Job not found' });
     
-    const labor_cost = (labor_hours || 0) * (labor_rate || job.labor_rate);
+    const labor_cost = round((labor_hours || 0) * (labor_rate || job.labor_rate));
     const itemsResult = await queryOne('SELECT COALESCE(SUM(total), 0) as total FROM job_items WHERE job_id = $1', [req.params.id]);
     const items_cost = parseFloat(itemsResult.total);
     const partsResult = await queryOne('SELECT COALESCE(SUM(total), 0) as total FROM job_parts WHERE job_id = $1', [req.params.id]);
     const parts_cost = parseFloat(partsResult.total);
     const fuelCost = parseFloat(fuel_charge) || job.fuel_charge || 0;
     const cleaningCost = parseFloat(cleaning_charge) || job.cleaning_charge || 0;
-    const total_cost = labor_cost + items_cost + parts_cost + fuelCost + cleaningCost;
+    const total_cost = round(labor_cost + items_cost + parts_cost + fuelCost + cleaningCost);
     
     let started_at = job.started_at;
     let completed_at = job.completed_at;

@@ -1,1 +1,5 @@
 firebase deploy --only hosting --project knight-auto-works-f128c
+
+
+...
+gcloud run deploy knight-auto-backend --source server --region us-central1 --allow-unauthenticated --set-env-vars "DATABASE_URL=postgresql://neondb_owner:npg_Js8u3AGrYRCx@ep-dry-lab-a1rskxgm-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require,JWT_SECRET=kaw-secure-production-secret-998877,PGSSLMODE=no-verify"
