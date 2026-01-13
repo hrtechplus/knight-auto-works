@@ -8,12 +8,25 @@ import db from './database.js';
 import { createError, ErrorCodes } from './validation.js';
 import { auditLog } from './audit.js';
 import admin from 'firebase-admin';
+import fs from 'fs';
 
 // Initialize Firebase Admin
 if (!admin.apps.length) {
   try {
-    admin.initializeApp();
-    console.log('✅ Firebase Admin Initialized (SQLite Mode)');
+    let serviceAccount;
+    if (fs.existsSync('./service-account.json')) {
+      serviceAccount = JSON.parse(fs.readFileSync('./service-account.json', 'utf8'));
+    }
+
+    if (serviceAccount) {
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount)
+      });
+      console.log('✅ Firebase Admin Initialized (Service Account)');
+    } else {
+      admin.initializeApp();
+      console.log('⚠️ Firebase Admin Initialized (Default Creds) - Token verification might fail locally!');
+    }
   } catch (e) {
     console.warn('⚠️ Firebase Admin Initialization Failed:', e.message);
   }
