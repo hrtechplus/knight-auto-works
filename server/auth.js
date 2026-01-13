@@ -7,6 +7,17 @@ import bcrypt from 'bcryptjs';
 import db from './database.js';
 import { createError, ErrorCodes } from './validation.js';
 import { auditLog } from './audit.js';
+import admin from 'firebase-admin';
+
+// Initialize Firebase Admin
+if (!admin.apps.length) {
+  try {
+    admin.initializeApp();
+    console.log('✅ Firebase Admin Initialized (SQLite Mode)');
+  } catch (e) {
+    console.warn('⚠️ Firebase Admin Initialization Failed:', e.message);
+  }
+}
 
 // Secret key for JWT (in production, use environment variable)
 // Secret key for JWT
@@ -204,6 +215,41 @@ export function setupPublicAuthRoutes(app) {
       });
     } catch (error) {
       res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
+    }
+  });
+
+  // Firebase Login
+  app.post('/api/auth/firebase-login', async (req, res) => {
+    try {
+      const { token } = req.body;
+      if (!token) return res.status(400).json(createError(ErrorCodes.VALIDATION_ERROR, 'Token required'));
+
+      const decodedToken = await admin.auth().verifyIdToken(token);
+      const { email } = decodedToken;
+      
+      const user = db.prepare('SELECT * FROM users WHERE username = ?').get(email);
+      
+      if (!user) {
+        return res.status(401).json(createError(ErrorCodes.UNAUTHORIZED, `User ${email} not found. Ensure username matches Google Email.`));
+      }
+      
+      if (!user.is_active) {
+        return res.status(401).json(createError(ErrorCodes.UNAUTHORIZED, 'Account is disabled'));
+      }
+
+      // Success
+      db.prepare('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?').run(user.id);
+      
+      const accessToken = generateToken(user.id);
+      
+      res.json({
+        token: accessToken,
+        user: { id: user.id, username: user.username, name: user.name, role: user.role }
+      });
+      
+    } catch (error) {
+      console.error('Firebase Auth Error:', error);
+      res.status(401).json(createError(ErrorCodes.UNAUTHORIZED, 'Invalid authentication token'));
     }
   });
 }
