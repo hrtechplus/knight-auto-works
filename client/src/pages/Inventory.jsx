@@ -231,8 +231,16 @@ function Inventory() {
 
       {/* Item Modal */}
       {showModal && (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && closeModal()}>
-          <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
+        <div 
+          className="modal-overlay" 
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              e.preventDefault();
+              closeModal();
+            }
+          }}
+        >
+          <div className="modal modal-lg" onMouseDown={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">{editingItem ? 'Edit Item' : 'Add Item'}</h2>
               <button className="modal-close" onClick={closeModal}><X size={20} /></button>
@@ -316,8 +324,16 @@ function Inventory() {
 
       {/* Adjust Stock Modal */}
       {showAdjustModal && adjustItem && (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowAdjustModal(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
+        <div 
+          className="modal-overlay" 
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              e.preventDefault();
+              setShowAdjustModal(false);
+            }
+          }}
+        >
+          <div className="modal" onMouseDown={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">Adjust Stock: {adjustItem.name}</h2>
               <button className="modal-close" onClick={() => setShowAdjustModal(false)}><X size={20} /></button>
@@ -362,8 +378,16 @@ function Inventory() {
 
       {/* Supplier Modal */}
       {showSupplierModal && (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowSupplierModal(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
+        <div 
+          className="modal-overlay" 
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              e.preventDefault();
+              setShowSupplierModal(false);
+            }
+          }}
+        >
+          <div className="modal" onMouseDown={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">Add Supplier</h2>
               <button className="modal-close" onClick={() => setShowSupplierModal(false)}><X size={20} /></button>

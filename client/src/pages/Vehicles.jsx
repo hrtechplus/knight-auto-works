@@ -196,8 +196,16 @@ function Vehicles() {
 
       {/* Modal */}
       {showModal && (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowModal(false)}>
-          <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
+        <div 
+          className="modal-overlay" 
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              e.preventDefault();
+              setShowModal(false);
+            }
+          }}
+        >
+          <div className="modal modal-lg" onMouseDown={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">{editingVehicle ? 'Edit Vehicle' : 'Add Vehicle'}</h2>
               <button className="modal-close" onClick={() => setShowModal(false)}>

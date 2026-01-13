@@ -451,8 +451,16 @@ function JobDetail() {
 
       {/* Status Change Confirmation Dialog */}
       {statusConfirm.isOpen && (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setStatusConfirm({ isOpen: false, action: '', status: '' })}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
+        <div 
+          className="modal-overlay" 
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              e.preventDefault();
+              setStatusConfirm({ isOpen: false, action: '', status: '' });
+            }
+          }}
+        >
+          <div className="modal" onMouseDown={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">Confirm Action</h2>
               <button className="modal-close" onClick={() => setStatusConfirm({ isOpen: false, action: '', status: '' })}>
@@ -770,8 +778,16 @@ function JobDetail() {
 
       {/* Add Service Modal */}
       {showItemModal && (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowItemModal(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
+        <div 
+          className="modal-overlay" 
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              e.preventDefault();
+              setShowItemModal(false);
+            }
+          }}
+        >
+          <div className="modal" onMouseDown={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">Add Service</h2>
               <button className="modal-close" onClick={() => setShowItemModal(false)}>
@@ -853,8 +869,16 @@ function JobDetail() {
 
       {/* Add Part Modal */}
       {showPartModal && (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowPartModal(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
+        <div 
+          className="modal-overlay" 
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              e.preventDefault();
+              setShowPartModal(false);
+            }
+          }}
+        >
+          <div className="modal" onMouseDown={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">Add Part</h2>
               <button className="modal-close" onClick={() => setShowPartModal(false)}>
@@ -922,8 +946,16 @@ function JobDetail() {
 
       {/* Edit Service Modal */}
       {showEditItemModal && (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowEditItemModal(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
+        <div 
+          className="modal-overlay" 
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              e.preventDefault();
+              setShowEditItemModal(false);
+            }
+          }}
+        >
+          <div className="modal" onMouseDown={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">Edit Service</h2>
               <button className="modal-close" onClick={() => setShowEditItemModal(false)}>
@@ -1007,8 +1039,16 @@ function JobDetail() {
 
       {/* Edit Part Modal */}
       {showEditPartModal && (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowEditPartModal(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
+        <div 
+          className="modal-overlay" 
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              e.preventDefault();
+              setShowEditPartModal(false);
+            }
+          }}
+        >
+          <div className="modal" onMouseDown={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">Edit Part</h2>
               <button className="modal-close" onClick={() => setShowEditPartModal(false)}>

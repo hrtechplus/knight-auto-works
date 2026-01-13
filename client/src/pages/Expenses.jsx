@@ -148,8 +148,16 @@ function Expenses() {
 
       {/* Modal */}
       {showModal && (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowModal(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
+        <div 
+          className="modal-overlay" 
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              e.preventDefault();
+              setShowModal(false);
+            }
+          }}
+        >
+          <div className="modal" onMouseDown={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">Add Expense</h2>
               <button className="modal-close" onClick={() => setShowModal(false)}><X size={20} /></button>
