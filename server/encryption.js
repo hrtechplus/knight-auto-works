@@ -13,6 +13,10 @@ const AUTH_TAG_LENGTH = 16;
 function getEncryptionKey() {
   const key = process.env.ENCRYPTION_KEY;
   if (!key) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error('❌ FATAL: ENCRYPTION_KEY must be set in production!');
+      process.exit(1);
+    }
     console.warn('WARNING: ENCRYPTION_KEY not set. Using default key (INSECURE for production)');
     return crypto.scryptSync('default-key-change-in-production', 'salt', 32);
   }

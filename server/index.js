@@ -23,15 +23,38 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
-app.use(cors());
+const allowedOrigins = [
+  'https://knightautoworks.lk',
+  'https://www.knightautoworks.lk',
+  'https://knight-auto-works-f128c.web.app',
+  'http://localhost:5173', // Local development
+  'http://localhost:3000'  // Alternative local port
+];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, Postman, etc.)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.warn(`CORS blocked: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(helmet());
 app.use(rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 300, // Limit each IP to 300 requests per `window`
-  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  limit: 100, // Reduced from 300 to prevent abuse
+  standardHeaders: true,
+  legacyHeaders: false,
 }));
-app.use(express.json());
+app.use(express.json({ limit: '10mb' })); // Prevent DoS via huge payloads
 
 // Input sanitization middleware
 app.use(sanitizeMiddleware);
