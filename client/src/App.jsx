@@ -139,7 +139,11 @@ function AppContent({ user, onLogout }) {
         </nav>
 
         {/* User info and logout */}
-        <div className="sidebar-footer">
+        <div style={{
+          padding: '1rem 1.5rem',
+          borderTop: '1px solid var(--border)',
+          marginTop: 'auto'
+        }}>
           <div style={{
             display: 'flex',
             alignItems: 'center',

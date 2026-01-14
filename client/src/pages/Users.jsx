@@ -230,22 +230,17 @@ export default function UsersPage() {
         </div>
       </div>
 
-      {/* Search and Filters */}
-      <div style={{ marginBottom: '1.5rem', display: 'flex', gap: '1rem', alignItems: 'center' }}>
-        <div className="search-box" style={{ position: 'relative', flex: 1, maxWidth: '400px' }}>
+      {/* Search */}
+      <div className="card" style={{ marginBottom: '1rem' }}>
+        <div className="search-box" style={{ position: 'relative' }}>
           <Search size={18} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
           <input
             type="text"
             className="form-control"
-            placeholder="Search users..."
+            placeholder="Search users by name, email, or role..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ 
-              paddingLeft: '2.75rem',
-              background: 'var(--bg-card)',
-              border: '1px solid var(--border)',
-              boxShadow: 'var(--shadow-sm)'
-            }}
+            style={{ paddingLeft: '2.75rem' }}
           />
         </div>
       </div>
