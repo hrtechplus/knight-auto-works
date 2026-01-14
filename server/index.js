@@ -2041,12 +2041,29 @@ app.get('/api/reports/summary', requireRole('admin'), (req, res) => {
       SELECT COUNT(*) as count FROM customers
       WHERE DATE(created_at) BETWEEN ? AND ?
     `).get(start, end).count;
+
+    const cogs = db.prepare(`
+      SELECT COALESCE(SUM(jp.quantity * i.cost_price), 0) as total
+      FROM job_parts jp
+      JOIN jobs j ON jp.job_id = j.id
+      JOIN inventory i ON jp.inventory_id = i.id
+      WHERE DATE(j.completed_at) BETWEEN ? AND ?
+    `).get(start, end).total;
+
+    const taxCollected = db.prepare(`
+      SELECT COALESCE(SUM(p.amount * (i.tax_amount / NULLIF(i.total, 0))), 0) as total
+      FROM payments p
+      JOIN invoices i ON p.invoice_id = i.id
+      WHERE DATE(p.created_at) BETWEEN ? AND ?
+    `).get(start, end).total;
     
     res.json({
       period: { start, end },
       revenue,
       expenses,
-      profit: revenue - expenses,
+      cogs,
+      taxCollected,
+      profit: revenue - expenses - cogs - taxCollected,
       jobsCompleted,
       newCustomers
     });

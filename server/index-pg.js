@@ -2207,18 +2207,33 @@ app.get('/api/reports/summary', requireAdminOrAbove, async (req, res) => {
     const start = start_date || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
     const end = end_date || new Date().toISOString().split('T')[0];
     
-    const [revenue, expenses, jobsCompleted, newCustomers] = await Promise.all([
+    const [revenue, expenses, jobsCompleted, newCustomers, cogs, taxCollected] = await Promise.all([
       queryOne('SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE DATE(created_at) BETWEEN $1 AND $2', [start, end]),
       queryOne('SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE expense_date BETWEEN $1 AND $2', [start, end]),
       queryOne('SELECT COUNT(*) as count FROM jobs WHERE DATE(completed_at) BETWEEN $1 AND $2', [start, end]),
-      queryOne('SELECT COUNT(*) as count FROM customers WHERE DATE(created_at) BETWEEN $1 AND $2', [start, end])
+      queryOne('SELECT COUNT(*) as count FROM customers WHERE DATE(created_at) BETWEEN $1 AND $2', [start, end]),
+      queryOne(`
+        SELECT COALESCE(SUM(jp.quantity * i.cost_price), 0) as total 
+        FROM job_parts jp 
+        JOIN jobs j ON jp.job_id = j.id 
+        JOIN inventory i ON jp.inventory_id = i.id 
+        WHERE DATE(j.completed_at) BETWEEN $1 AND $2
+      `, [start, end]),
+      queryOne(`
+        SELECT COALESCE(SUM(p.amount * (i.tax_amount / NULLIF(i.total, 0))), 0) as total
+        FROM payments p
+        JOIN invoices i ON p.invoice_id = i.id
+        WHERE DATE(p.created_at) BETWEEN $1 AND $2
+      `, [start, end])
     ]);
     
     res.json({
       period: { start, end },
-      revenue: parseFloat(revenue.total),
+      revenue: parseFloat(revenue.total), // Gross Revenue (Cash In)
       expenses: parseFloat(expenses.total),
-      profit: parseFloat(revenue.total) - parseFloat(expenses.total),
+      cogs: parseFloat(cogs.total),
+      taxCollected: parseFloat(taxCollected.total),
+      profit: parseFloat(revenue.total) - parseFloat(expenses.total) - parseFloat(cogs.total) - parseFloat(taxCollected.total),
       jobsCompleted: parseInt(jobsCompleted.count),
       newCustomers: parseInt(newCustomers.count)
     });
