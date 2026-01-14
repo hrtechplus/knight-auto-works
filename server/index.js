@@ -1859,14 +1859,16 @@ app.post('/api/invoices/:id/payments', (req, res) => {
     
     const newAmountPaid = invoice.amount_paid + amount;
     const newBalance = invoice.total - newAmountPaid;
-    const newStatus = newBalance <= 0 ? 'paid' : 'partial';
+    // Penny Tolerance: If balance is less than 0.01, treat as paid
+    const effectiveBalance = newBalance < 0.01 ? 0 : newBalance;
+    const newStatus = effectiveBalance === 0 ? 'paid' : 'partial';
     
     db.prepare(`
-      UPDATE invoices SET amount_paid = ?, balance = ?, status = ?, paid_at = ?
+      UPDATE invoices SET amount_paid = ?, balance = ?, status = ?, paid_at = CASE WHEN ? = 'paid' THEN CURRENT_TIMESTAMP ELSE paid_at END
       WHERE id = ?
-    `).run(newAmountPaid, newBalance, newStatus, newStatus === 'paid' ? new Date().toISOString() : null, req.params.id);
+    `).run(newAmountPaid, effectiveBalance, newStatus, newStatus, req.params.id);
     
-    res.json({ id: result.lastInsertRowid, ...req.body, new_balance: newBalance, status: newStatus });
+    res.json({ id: result.lastInsertRowid, ...req.body, new_balance: effectiveBalance, status: newStatus });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

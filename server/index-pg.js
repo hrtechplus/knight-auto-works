@@ -2048,11 +2048,13 @@ app.post('/api/invoices/:id/payments', async (req, res) => {
       const invoice = invoiceResult.rows[0];
       const newAmountPaid = round(parseFloat(invoice.amount_paid) + parseFloat(amount));
       const newBalance = round(parseFloat(invoice.total) - newAmountPaid);
-      const newStatus = newBalance <= 0 ? 'paid' : 'partial';
+      // Penny Tolerance: If balance is less than 0.01, treat as paid
+      const effectiveBalance = newBalance < 0.01 ? 0 : newBalance;
+      const newStatus = effectiveBalance === 0 ? 'paid' : 'partial';
       
       await client.query(
         'UPDATE invoices SET amount_paid = $1, balance = $2, status = $3, paid_at = CASE WHEN $3 = $4 THEN CURRENT_TIMESTAMP ELSE paid_at END WHERE id = $5',
-        [newAmountPaid, Math.max(0, newBalance), newStatus, 'paid', req.params.id]
+        [newAmountPaid, effectiveBalance, newStatus, 'paid', req.params.id]
       );
       
       return { id: paymentResult.rows[0].id, ...req.body };
