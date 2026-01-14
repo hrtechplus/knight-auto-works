@@ -946,6 +946,12 @@ app.get('/api/jobs/:id', async (req, res) => {
 
 app.post('/api/jobs', async (req, res) => {
   try {
+    // Validate input
+    const errors = validate(req.body, schemas.job);
+    if (errors) {
+      return res.status(400).json(createError(ErrorCodes.VALIDATION_ERROR, 'Validation failed', errors));
+    }
+    
     const { vehicle_id, description, priority, technician, odometer_in, estimated_completion } = req.body;
     const job_number = await generateJobNumber();
     
@@ -974,6 +980,16 @@ app.put('/api/jobs/:id', async (req, res) => {
     const fuelCost = parseFloat(fuel_charge) || job.fuel_charge || 0;
     const cleaningCost = parseFloat(cleaning_charge) || job.cleaning_charge || 0;
     const total_cost = round(labor_cost + items_cost + parts_cost + fuelCost + cleaningCost);
+    
+    // Validate status transition
+    if (status && status !== job.status) {
+      if (!canTransitionJobStatus(job.status, status)) {
+        return res.status(400).json(createError(
+          ErrorCodes.BUSINESS_RULE, 
+          `Cannot transition job from ${job.status} to ${status}`
+        ));
+      }
+    }
     
     let started_at = job.started_at;
     let completed_at = job.completed_at;
