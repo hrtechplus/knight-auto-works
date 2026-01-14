@@ -104,7 +104,7 @@ function JobDetail() {
       setPartForm({ inventory_id: '', part_name: '', quantity: 1, unit_price: 0, cost_price: 0 });
       loadData();
     } catch (error) {
-      alert('Failed to add part');
+      alert(error.response?.data?.error || 'Failed to add part');
     }
   };
 
@@ -226,7 +226,7 @@ function JobDetail() {
       const res = await createInvoiceFromJob(id);
       navigate(`/invoices/${res.data.id}`);
     } catch (error) {
-      alert('Failed to create invoice');
+      alert(error.response?.data?.error || 'Failed to create invoice');
     }
   };
 

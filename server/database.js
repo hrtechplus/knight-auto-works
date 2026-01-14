@@ -252,6 +252,9 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+  
+  -- Ensure unique phone numbers for data integrity
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone);
 `);
 
 // Add warranty columns to jobs table if not exists

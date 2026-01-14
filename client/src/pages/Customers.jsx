@@ -70,6 +70,7 @@ function Customers() {
       loadCustomers();
     } catch (error) {
       console.error('Failed to save customer:', error);
+      alert(error.response?.data?.error || 'Failed to save customer');
     }
   };
 
