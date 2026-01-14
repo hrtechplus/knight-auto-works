@@ -1028,6 +1028,8 @@ app.put('/api/jobs/:id', async (req, res) => {
           `Cannot transition job from ${job.status} to ${status}`
         ));
       }
+      // Audit Log Status Change
+      await auditLog('jobs', req.params.id, 'status_change', { status: job.status }, { status: status });
     }
     
     let started_at = job.started_at;
@@ -1114,7 +1116,7 @@ app.post('/api/jobs/:id/items', async (req, res) => {
   }
 });
 
-app.delete('/api/jobs/:jobId/items/:itemId', async (req, res) => {
+app.delete('/api/jobs/:jobId/items/:itemId', requireAdminOrAbove, async (req, res) => {
   try {
     await query('DELETE FROM job_items WHERE id = $1 AND job_id = $2', [req.params.itemId, req.params.jobId]);
     await recalculateJobTotal(req.params.jobId);
@@ -1205,7 +1207,7 @@ app.post('/api/jobs/:id/parts', async (req, res) => {
   }
 });
 
-app.delete('/api/jobs/:jobId/parts/:partId', async (req, res) => {
+app.delete('/api/jobs/:jobId/parts/:partId', requireAdminOrAbove, async (req, res) => {
   try {
     await transaction(async (client) => {
       const partResult = await client.query('SELECT * FROM job_parts WHERE id = $1 AND job_id = $2', [req.params.partId, req.params.jobId]);
@@ -2063,7 +2065,7 @@ app.post('/api/invoices/:id/payments', async (req, res) => {
 });
 
 // Delete payment
-app.delete('/api/invoices/:id/payments/:paymentId', async (req, res) => {
+app.delete('/api/invoices/:id/payments/:paymentId', requireAdminOrAbove, async (req, res) => {
   try {
     const { id, paymentId } = req.params;
     
