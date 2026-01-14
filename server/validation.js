@@ -46,12 +46,15 @@ export const validators = {
     return null;
   },
 
-  // Check if phone format is valid (flexible format)
+  // Check if phone format is valid (Sri Lankan format: 10 digits)
   phone: (value, fieldName = 'Phone') => {
     if (!value) return null; // Optional field
-    const phoneRegex = /^[\d\s\-+()]{7,20}$/;
-    if (!phoneRegex.test(value)) {
-      return `${fieldName} is not a valid phone number`;
+    // Remove spaces, dashes, and parentheses
+    const cleaned = value.replace(/[\s\-()]/g, '');
+    // Check if exactly 10 digits (Sri Lankan format)
+    const phoneRegex = /^0\d{9}$/;
+    if (!phoneRegex.test(cleaned)) {
+      return `${fieldName} must be a valid Sri Lankan phone number (10 digits starting with 0)`;
     }
     return null;
   },

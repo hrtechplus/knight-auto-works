@@ -1583,6 +1583,43 @@ app.post('/api/invoices/from-job/:jobId', async (req, res) => {
   }
 });
 
+// Delete invoice (super_admin only)
+app.delete('/api/invoices/:id', requireRole('super_admin'), async (req, res) => {
+  try {
+    // Check for payments - don't allow deletion if any payments exist
+    const payments = await queryAll('SELECT * FROM payments WHERE invoice_id = $1', [req.params.id]);
+    if (payments.length > 0) {
+      return res.status(400).json(createError(
+        ErrorCodes.BUSINESS_RULE,
+        'Cannot delete invoice with payment history. Delete payments first.'
+      ));
+    }
+    
+    await transaction(async (client) => {
+      // Get invoice to restore job status
+      const invoiceResult = await client.query('SELECT job_id FROM invoices WHERE id = $1', [req.params.id]);
+      const invoice = invoiceResult.rows[0];
+      
+      if (!invoice) {
+        throw new Error('Invoice not found');
+      }
+      
+      // Restore job status to 'completed' if invoice had a job
+      if (invoice.job_id) {
+        await client.query("UPDATE jobs SET status = 'completed' WHERE id = $1", [invoice.job_id]);
+      }
+      
+      // Delete invoice
+      await client.query('DELETE FROM invoices WHERE id = $1', [req.params.id]);
+    });
+    
+    res.json({ success: true });
+  } catch (error) {
+    const status = error.message === 'Invoice not found' ? 404 : 500;
+    res.status(status).json({ error: error.message });
+  }
+});
+
 // PDF Invoice Generation - Professional Design with Logo
 app.get('/api/invoices/:id/pdf', async (req, res) => {
   try {
@@ -1914,6 +1951,19 @@ app.get('/api/invoices/:id/pdf', async (req, res) => {
 app.post('/api/invoices/:id/payments', async (req, res) => {
   try {
     const { amount, payment_method, reference, notes } = req.body;
+    
+    // Validate payment amount doesn't exceed balance
+    const invoiceCheck = await queryOne('SELECT balance FROM invoices WHERE id = $1', [req.params.id]);
+    if (!invoiceCheck) {
+      return res.status(404).json(createError(ErrorCodes.NOT_FOUND, 'Invoice not found'));
+    }
+    
+    if (parseFloat(amount) > parseFloat(invoiceCheck.balance)) {
+      return res.status(400).json(createError(
+        ErrorCodes.BUSINESS_RULE,
+        `Payment amount (Rs. ${amount}) exceeds balance due (Rs. ${invoiceCheck.balance})`
+      ));
+    }
     
     const result = await transaction(async (client) => {
       const paymentResult = await client.query(
