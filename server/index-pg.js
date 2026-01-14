@@ -1146,6 +1146,13 @@ app.post('/api/jobs/:id/parts', async (req, res) => {
     const total = round((quantity || 1) * (unit_price || 0));
     
     const result = await transaction(async (client) => {
+      const inventoryItem = await client.query('SELECT quantity FROM inventory WHERE id = $1', [inventory_id]);
+      const currentStock = inventoryItem.rows[0]?.quantity || 0;
+      
+      if (currentStock < (quantity || 1)) {
+         throw new Error(`Insufficient stock. Available: ${currentStock}, Requested: ${quantity || 1}`);
+      }
+
       const insertResult = await client.query(
         'INSERT INTO job_parts (job_id, inventory_id, part_name, quantity, unit_price, total, cost_price) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
         [req.params.id, inventory_id, part_name, quantity || 1, unit_price || 0, total, cost_price || 0]
@@ -1362,6 +1369,20 @@ app.put('/api/inventory/:id', async (req, res) => {
     // Validation
     if ((quantity !== undefined && quantity < 0) || (min_stock !== undefined && min_stock < 0) || (cost_price !== undefined && cost_price < 0) || (sell_price !== undefined && sell_price < 0)) {
       return res.status(400).json(createError(ErrorCodes.VALIDATION_ERROR, 'Inventory values cannot be negative'));
+    }
+
+    // Price Audit
+    const current = await queryOne('SELECT cost_price, sell_price FROM inventory WHERE id = $1', [req.params.id]);
+    
+    if (current) {
+      if (cost_price !== undefined && cost_price !== current.cost_price) {
+        await query('INSERT INTO stock_movements (inventory_id, movement_type, quantity, notes) VALUES ($1, $2, $3, $4)', 
+        [req.params.id, 'audit', 0, `Cost Price changed: ${current.cost_price} -> ${cost_price}`]);
+      }
+      if (sell_price !== undefined && sell_price !== current.sell_price) {
+        await query('INSERT INTO stock_movements (inventory_id, movement_type, quantity, notes) VALUES ($1, $2, $3, $4)', 
+        [req.params.id, 'audit', 0, `Sell Price changed: ${current.sell_price} -> ${sell_price}`]);
+      }
     }
 
     await query(

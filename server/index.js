@@ -910,6 +910,13 @@ app.post('/api/jobs/:id/parts', (req, res) => {
 
     const result = db.transaction(() => {
       const { inventory_id, part_name, quantity, unit_price } = req.body;
+
+      if (inventory_id) {
+        const currentStock = db.prepare('SELECT quantity FROM inventory WHERE id = ?').get(inventory_id)?.quantity || 0;
+        if (currentStock < (quantity || 1)) {
+          throw new Error(`Insufficient stock. Available: ${currentStock}, Requested: ${quantity || 1}`);
+        }
+      }
       const total = round((quantity || 1) * (unit_price || 0));
       
       const insertResult = db.prepare(`
@@ -1111,7 +1118,7 @@ app.put('/api/inventory/:id', (req, res) => {
       return res.status(400).json(createError(ErrorCodes.VALIDATION_ERROR, 'Inventory values cannot be negative'));
     }
 
-    const current = db.prepare('SELECT quantity FROM inventory WHERE id = ?').get(req.params.id);
+    const current = db.prepare('SELECT quantity, cost_price, sell_price FROM inventory WHERE id = ?').get(req.params.id);
     
     db.prepare(`
       UPDATE inventory SET sku = ?, name = ?, description = ?, category = ?, quantity = ?, 
@@ -1120,12 +1127,22 @@ app.put('/api/inventory/:id', (req, res) => {
     `).run(sku, name, description, category, quantity, min_stock, cost_price, sell_price, supplier_id, location, req.params.id);
     
     // Record stock adjustment if quantity changed
-    if (current && quantity !== current.quantity) {
-      const diff = quantity - current.quantity;
-      db.prepare(`
-        INSERT INTO stock_movements (inventory_id, movement_type, quantity, notes)
-        VALUES (?, ?, ?, 'Manual adjustment')
-      `).run(req.params.id, diff > 0 ? 'in' : 'out', Math.abs(diff));
+    if (current) {
+      if (quantity !== undefined && quantity !== current.quantity) {
+        const diff = quantity - current.quantity;
+        db.prepare(`
+          INSERT INTO stock_movements (inventory_id, movement_type, quantity, notes)
+          VALUES (?, ?, ?, 'Manual adjustment')
+        `).run(req.params.id, diff > 0 ? 'in' : 'out', Math.abs(diff));
+      }
+      
+      // Price Audit
+      if (cost_price !== undefined && cost_price !== current.cost_price) {
+         db.prepare("INSERT INTO stock_movements (inventory_id, movement_type, quantity, notes) VALUES (?, 'audit', 0, ?)").run(req.params.id, `Cost Price changed: ${current.cost_price} -> ${cost_price}`);
+      }
+      if (sell_price !== undefined && sell_price !== current.sell_price) {
+         db.prepare("INSERT INTO stock_movements (inventory_id, movement_type, quantity, notes) VALUES (?, 'audit', 0, ?)").run(req.params.id, `Sell Price changed: ${current.sell_price} -> ${sell_price}`);
+      }
     }
     
     res.json({ id: req.params.id, ...req.body });
@@ -1357,6 +1374,15 @@ app.delete('/api/invoices/:id', requireRole('super_admin'), (req, res) => {
 app.post('/api/invoices', (req, res) => {
   try {
     const { job_id, customer_id, subtotal, tax_rate, discount, due_date, notes } = req.body;
+    
+    // Prevent double billing
+    if (job_id) {
+      const existingInvoice = db.prepare('SELECT id FROM invoices WHERE job_id = ?').get(job_id);
+      if (existingInvoice) {
+        return res.status(400).json(createError(ErrorCodes.BUSINESS_RULE, 'Job has already been invoiced'));
+      }
+    }
+
     const invoice_number = generateInvoiceNumber();
     const subtotalCalc = round(subtotal);
     const tax_amount = round(subtotalCalc * ((tax_rate || 0) / 100));
