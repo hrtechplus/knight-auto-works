@@ -720,6 +720,13 @@ app.post('/api/customers', async (req, res) => {
     if (errors) return res.status(400).json(createError(ErrorCodes.VALIDATION_ERROR, 'Validation failed', errors));
     
     const { name, phone, email, address, notes } = req.body;
+    
+    // Prevent duplicate customers
+    const existing = await queryOne('SELECT id FROM customers WHERE phone = $1', [phone]);
+    if (existing) {
+      return res.status(400).json(createError(ErrorCodes.BUSINESS_RULE, 'Customer with this phone number already exists'));
+    }
+
     const result = await query(
       'INSERT INTO customers (name, phone, email, address, notes) VALUES ($1, $2, $3, $4, $5) RETURNING id',
       [name, phone, email, address, notes]
@@ -838,6 +845,14 @@ app.post('/api/vehicles', async (req, res) => {
     if (errors) return res.status(400).json(createError(ErrorCodes.VALIDATION_ERROR, 'Validation failed', errors));
     
     const { customer_id, plate_number, make, model, year, vin, color, engine_type, transmission, odometer, category, notes } = req.body;
+    
+    // Prevent duplicate vehicles (normalize plate)
+    const normalizedPlate = plate_number.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+    const existing = await queryOne('SELECT id FROM vehicles WHERE replace(upper(plate_number), \' \', \'\') = $1 OR upper(plate_number) = $2', [normalizedPlate, plate_number.toUpperCase()]);
+    
+    if (existing) {
+      return res.status(400).json(createError(ErrorCodes.BUSINESS_RULE, 'Vehicle with this license plate already exists'));
+    }
     
     const customer = await queryOne('SELECT id FROM customers WHERE id = $1', [customer_id]);
     if (!customer) return res.status(404).json(createError(ErrorCodes.NOT_FOUND, 'Customer not found'));

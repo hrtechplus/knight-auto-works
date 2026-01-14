@@ -419,6 +419,12 @@ app.post('/api/customers', (req, res) => {
     
     const { name, phone, email, address, notes } = req.body;
     
+    // Prevent duplicate customers
+    const existing = db.prepare('SELECT id FROM customers WHERE phone = ?').get(phone);
+    if (existing) {
+      return res.status(400).json(createError(ErrorCodes.BUSINESS_RULE, 'Customer with this phone number already exists'));
+    }
+    
     // Encrypt sensitive PII
     const encryptedPhone = phone ? encrypt(phone) : null;
     const encryptedEmail = email ? encrypt(email) : null;
@@ -576,6 +582,14 @@ app.post('/api/vehicles', (req, res) => {
     
     const { customer_id, plate_number, make, model, year, vin, color, engine_type, transmission, odometer, notes } = req.body;
     
+    // Prevent duplicate vehicles (normalize plate)
+    const normalizedPlate = plate_number.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+    const existing = db.prepare('SELECT id FROM vehicles WHERE replace(upper(plate_number), " ", "") = ? OR upper(plate_number) = ?').get(normalizedPlate, plate_number.toUpperCase());
+    
+    if (existing) {
+      return res.status(400).json(createError(ErrorCodes.BUSINESS_RULE, 'Vehicle with this license plate already exists'));
+    }
+
     // Check customer exists
     const customer = db.prepare('SELECT id FROM customers WHERE id = ?').get(customer_id);
     if (!customer) {
