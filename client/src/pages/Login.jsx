@@ -66,8 +66,7 @@ export default function Login({ onLogin }) {
             height: '80px',
             borderRadius: 'var(--radius-lg)',
             overflow: 'hidden',
-            margin: '0 auto 1.25rem',
-            boxShadow: '0 0 40px rgba(249, 115, 22, 0.3)'
+            margin: '0 auto 1.25rem'
           }}>
             <img 
               src="/bg-removed_logo_small.png" 
