@@ -230,17 +230,22 @@ export default function UsersPage() {
         </div>
       </div>
 
-      {/* Search */}
-      <div className="card" style={{ marginBottom: '1rem' }}>
-        <div className="search-box" style={{ position: 'relative' }}>
+      {/* Search and Filters */}
+      <div style={{ marginBottom: '1.5rem', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+        <div className="search-box" style={{ position: 'relative', flex: 1, maxWidth: '400px' }}>
           <Search size={18} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
           <input
             type="text"
             className="form-control"
-            placeholder="Search users by name, email, or role..."
+            placeholder="Search users..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ paddingLeft: '2.75rem' }}
+            style={{ 
+              paddingLeft: '2.75rem',
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border)',
+              boxShadow: 'var(--shadow-sm)'
+            }}
           />
         </div>
       </div>
@@ -261,12 +266,11 @@ export default function UsersPage() {
           <table className="table">
             <thead>
               <tr>
-                <th>User</th>
-                <th>Email / Username</th>
-                <th>Role</th>
-                <th>Status</th>
-                <th>Last Login</th>
-                <th>Actions</th>
+                <th style={{ width: '30%' }}>User</th>
+                <th style={{ width: '25%' }}>Email / Username</th>
+                <th style={{ width: '15%' }}>Role</th>
+                <th style={{ width: '10%' }}>Status</th>
+                <th style={{ width: '20%' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -308,9 +312,7 @@ export default function UsersPage() {
                       {user.is_active ? 'Active' : 'Inactive'}
                     </span>
                   </td>
-                  <td style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-                    {user.last_login ? new Date(user.last_login).toLocaleString() : 'Never'}
-                  </td>
+                  {/* Last Login removed */}
                   <td>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                       <button 
