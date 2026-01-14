@@ -20,6 +20,7 @@ import Reports from './pages/Reports';
 import SettingsPage from './pages/Settings';
 import UsersPage from './pages/Users';
 import Login from './pages/Login';
+import TrackJob from './pages/TrackJob';
 import { getStoredUser, logout, setUnauthorizedHandler } from './api';
 import ProtectedRoute from './components/ProtectedRoute';
 import ConfirmDialog from './components/ConfirmDialog';
@@ -264,14 +265,17 @@ function App() {
     setUser(null);
   };
 
-  // Show login page if not authenticated
-  if (!user) {
-    return <Login onLogin={handleLogin} />;
-  }
-
   return (
     <Router>
-      <AppContent user={user} onLogout={handleLogout} />
+      <Routes>
+        {/* Public route - no authentication required */}
+        <Route path="/track" element={<TrackJob />} />
+        
+        {/* Authenticated routes */}
+        <Route path="/*" element={
+          user ? <AppContent user={user} onLogout={handleLogout} /> : <Login onLogin={handleLogin} />
+        } />
+      </Routes>
     </Router>
   );
 }
