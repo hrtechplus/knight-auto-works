@@ -1339,6 +1339,12 @@ app.get('/api/inventory/:id', async (req, res) => {
 app.post('/api/inventory', async (req, res) => {
   try {
     const { sku, name, description, category, quantity, min_stock, cost_price, sell_price, supplier_id, location } = req.body;
+    
+    // Validation
+    if ((quantity && quantity < 0) || (min_stock && min_stock < 0) || (cost_price && cost_price < 0) || (sell_price && sell_price < 0)) {
+      return res.status(400).json(createError(ErrorCodes.VALIDATION_ERROR, 'Inventory values cannot be negative'));
+    }
+
     const result = await query(
       'INSERT INTO inventory (sku, name, description, category, quantity, min_stock, cost_price, sell_price, supplier_id, location) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id',
       [sku, name, description, category, quantity || 0, min_stock || 5, cost_price || 0, sell_price || 0, supplier_id, location]
@@ -1352,6 +1358,12 @@ app.post('/api/inventory', async (req, res) => {
 app.put('/api/inventory/:id', async (req, res) => {
   try {
     const { sku, name, description, category, quantity, min_stock, cost_price, sell_price, supplier_id, location } = req.body;
+    
+    // Validation
+    if ((quantity !== undefined && quantity < 0) || (min_stock !== undefined && min_stock < 0) || (cost_price !== undefined && cost_price < 0) || (sell_price !== undefined && sell_price < 0)) {
+      return res.status(400).json(createError(ErrorCodes.VALIDATION_ERROR, 'Inventory values cannot be negative'));
+    }
+
     await query(
       'UPDATE inventory SET sku = $1, name = $2, description = $3, category = $4, quantity = $5, min_stock = $6, cost_price = $7, sell_price = $8, supplier_id = $9, location = $10, updated_at = CURRENT_TIMESTAMP WHERE id = $11',
       [sku, name, description, category, quantity, min_stock, cost_price, sell_price, supplier_id, location, req.params.id]
@@ -1529,6 +1541,15 @@ app.get('/api/invoices/:id', async (req, res) => {
 app.post('/api/invoices', async (req, res) => {
   try {
     const { job_id, customer_id, subtotal, tax_rate, tax_amount, discount, total, due_date, notes } = req.body;
+    
+    // Prevent double billing
+    if (job_id) {
+      const existingInvoice = await queryOne('SELECT id FROM invoices WHERE job_id = $1', [job_id]);
+      if (existingInvoice) {
+        return res.status(400).json(createError(ErrorCodes.BUSINESS_RULE, 'Job has already been invoiced'));
+      }
+    }
+
     const invoice_number = await generateInvoiceNumber();
     
     // Recalculate with rounding to be safe
@@ -2085,6 +2106,11 @@ app.get('/api/expenses', async (req, res) => {
 app.post('/api/expenses', async (req, res) => {
   try {
     const { category, description, amount, payment_method, reference, expense_date } = req.body;
+    
+    if (amount <= 0) {
+      return res.status(400).json(createError(ErrorCodes.VALIDATION_ERROR, 'Expense amount must be greater than 0'));
+    }
+
     const result = await query(
       'INSERT INTO expenses (category, description, amount, payment_method, reference, expense_date) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
       [category, description, amount, payment_method || 'cash', reference, expense_date || new Date().toISOString().split('T')[0]]

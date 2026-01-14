@@ -1105,6 +1105,12 @@ app.post('/api/inventory', (req, res) => {
 app.put('/api/inventory/:id', (req, res) => {
   try {
     const { sku, name, description, category, quantity, min_stock, cost_price, sell_price, supplier_id, location } = req.body;
+    
+    // Validation
+    if ((quantity !== undefined && quantity < 0) || (min_stock !== undefined && min_stock < 0) || (cost_price !== undefined && cost_price < 0) || (sell_price !== undefined && sell_price < 0)) {
+      return res.status(400).json(createError(ErrorCodes.VALIDATION_ERROR, 'Inventory values cannot be negative'));
+    }
+
     const current = db.prepare('SELECT quantity FROM inventory WHERE id = ?').get(req.params.id);
     
     db.prepare(`
@@ -1909,6 +1915,11 @@ app.get('/api/expenses/categories', (req, res) => {
 app.post('/api/expenses', (req, res) => {
   try {
     const { category, description, amount, payment_method, reference, expense_date } = req.body;
+    
+    if (amount <= 0) {
+      return res.status(400).json(createError(ErrorCodes.VALIDATION_ERROR, 'Expense amount must be greater than 0'));
+    }
+
     const result = db.prepare(`
       INSERT INTO expenses (category, description, amount, payment_method, reference, expense_date)
       VALUES (?, ?, ?, ?, ?, ?)
