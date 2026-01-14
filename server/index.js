@@ -113,6 +113,41 @@ app.get('/api/health', (req, res) => {
   }
 });
 
+// Public Job Tracking
+app.get('/api/track-job', sanitizeMiddleware, (req, res) => {
+  try {
+    const { job_number, plate } = req.query;
+    if (!job_number || !plate) {
+      return res.status(400).json({ error: 'Job number and license plate are required' });
+    }
+
+    // Strict lookup requiring both job number and plate match
+    const job = db.prepare(`
+      SELECT j.job_number, j.status, j.created_at, j.completed_at,
+             v.make, v.model, v.plate_number
+      FROM jobs j
+      JOIN vehicles v ON j.vehicle_id = v.id
+      WHERE j.job_number = ? AND replace(v.plate_number, ' ', '') = replace(?, ' ', '')
+    `).get(job_number, plate);
+
+    if (!job) {
+      // Return ambiguous error for security (or not found)
+      return res.status(404).json({ error: 'Job not found or details incorrect' });
+    }
+
+    // Return limited public info
+    res.json({
+      job_number: job.job_number,
+      status: job.status,
+      created_at: job.created_at,
+      completed_at: job.completed_at,
+      vehicle: `${job.make} ${job.model} (${job.plate_number})`
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to track job' });
+  }
+});
+
 // Authentication middleware (applied to all /api routes except login and health)
 app.use('/api', authMiddleware);
 
@@ -1095,6 +1130,12 @@ app.put('/api/inventory/:id', (req, res) => {
 
 app.delete('/api/inventory/:id', requireRole('admin', 'super_admin'), (req, res) => {
   try {
+    // Check for usage in job_parts
+    const usage = db.prepare('SELECT COUNT(*) as count FROM job_parts WHERE inventory_id = ?').get(req.params.id);
+    if (usage.count > 0) {
+      return res.status(400).json(createError(ErrorCodes.BUSINESS_RULE, `Cannot delete item used in ${usage.count} job(s).`));
+    }
+
     db.prepare('DELETE FROM inventory WHERE id = ?').run(req.params.id);
     res.json({ success: true });
   } catch (error) {
@@ -1163,6 +1204,12 @@ app.put('/api/suppliers/:id', (req, res) => {
 
 app.delete('/api/suppliers/:id', requireRole('admin', 'super_admin'), (req, res) => {
   try {
+    // Check for inventory items linked to this supplier
+    const items = db.prepare('SELECT COUNT(*) as count FROM inventory WHERE supplier_id = ?').get(req.params.id);
+    if (items.count > 0) {
+      return res.status(400).json(createError(ErrorCodes.BUSINESS_RULE, `Cannot delete supplier associated with ${items.count} inventory item(s).`));
+    }
+
     db.prepare('DELETE FROM suppliers WHERE id = ?').run(req.params.id);
     res.json({ success: true });
   } catch (error) {
@@ -1234,6 +1281,70 @@ app.get('/api/invoices/:id', (req, res) => {
     res.json({ ...invoice, payments, job, items, parts });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE invoice (Super Admin only)
+app.delete('/api/invoices/:id', requireRole('super_admin'), (req, res) => {
+  try {
+    const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id);
+    if (!invoice) {
+        return res.status(404).json(createError(ErrorCodes.NOT_FOUND, 'Invoice not found'));
+    }
+
+    // Check for payments
+    const paymentCount = db.prepare('SELECT COUNT(*) as count FROM payments WHERE invoice_id = ?').get(req.params.id).count;
+    if (paymentCount > 0) {
+        return res.status(400).json(createError(ErrorCodes.BUSINESS_RULE, 'Cannot delete invoice with existing payments. Delete payments first.'));
+    }
+
+    db.transaction(() => {
+        // Delete invoice (items will cascade if FK set, otherwise clean manually)
+        // Assuming strict FK with cascade or manual cleanup. For now simple delete.
+        db.prepare('DELETE FROM invoices WHERE id = ?').run(req.params.id);
+        
+        // Revert job status if linked
+        if (invoice.job_id) {
+            db.prepare("UPDATE jobs SET status = 'completed', completed_at = ? WHERE id = ?")
+              .run(invoice.created_at, invoice.job_id);
+        }
+    })();
+
+    auditLog('invoices', req.params.id, 'delete', invoice, null);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
+  }
+});
+
+// DELETE invoice (Super Admin only)
+app.delete('/api/invoices/:id', requireRole('super_admin'), (req, res) => {
+  try {
+    const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id);
+    if (!invoice) {
+        return res.status(404).json(createError(ErrorCodes.NOT_FOUND, 'Invoice not found'));
+    }
+
+    // Check for payments
+    const paymentCount = db.prepare('SELECT COUNT(*) as count FROM payments WHERE invoice_id = ?').get(req.params.id).count;
+    if (paymentCount > 0) {
+        return res.status(400).json(createError(ErrorCodes.BUSINESS_RULE, 'Cannot delete invoice with existing payments. Delete payments first.'));
+    }
+
+    db.transaction(() => {
+        db.prepare('DELETE FROM invoices WHERE id = ?').run(req.params.id);
+        
+        // Revert job status if linked
+        if (invoice.job_id) {
+            db.prepare("UPDATE jobs SET status = 'completed', completed_at = ? WHERE id = ?")
+              .run(invoice.created_at, invoice.job_id);
+        }
+    })();
+
+    auditLog('invoices', req.params.id, 'delete', invoice, null);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
   }
 });
 
@@ -1689,6 +1800,11 @@ app.post('/api/invoices/:id/payments', (req, res) => {
     const { amount, payment_method, reference, notes } = req.body;
     const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id);
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+    
+    // Check for overpayment
+    if (amount > invoice.balance) {
+      return res.status(400).json(createError(ErrorCodes.BUSINESS_RULE, `Payment amount (${amount}) exceeds invoice balance (${invoice.balance})`));
+    }
     
     const result = db.prepare(`
       INSERT INTO payments (invoice_id, amount, payment_method, reference, notes)

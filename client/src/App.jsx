@@ -36,6 +36,38 @@ function AppContent({ user, onLogout }) {
       onLogout();
       navigate('/');
     });
+
+    // Idle Timer Logic (30 minutes)
+    let idleTimer;
+    const IDLE_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+
+    const resetTimer = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        console.log('User idle for 30 minutes, logging out...');
+        onLogout(); // Trigger logout
+        navigate('/');
+      }, IDLE_TIMEOUT);
+    };
+
+    // Events to track activity
+    const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
+    
+    // Add listeners
+    events.forEach(event => {
+      window.addEventListener(event, resetTimer);
+    });
+
+    // Start timer initially
+    resetTimer();
+
+    // Cleanup
+    return () => {
+      clearTimeout(idleTimer);
+      events.forEach(event => {
+        window.removeEventListener(event, resetTimer);
+      });
+    };
   }, [onLogout, navigate]);
 
   const handleLogoutClick = () => {

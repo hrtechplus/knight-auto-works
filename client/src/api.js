@@ -157,6 +157,14 @@ api.interceptors.response.use(
 // AUTHENTICATION
 // ============================================
 
+// Robust logout function
+export const logout = () => {
+  clearAuth();
+  localStorage.clear(); // Clear all app data
+  // Force reload to clear any in-memory state
+  window.location.href = '/'; 
+};
+
 export const login = async (username, password) => {
   const response = await api.post('/auth/login', { username, password });
   // Handle both backend formats (token vs accessToken)
@@ -185,17 +193,7 @@ export const loginWithFirebase = async (token) => {
   return response.data;
 };
 
-export const logout = async () => {
-  try {
-    const refreshToken = getRefreshToken();
-    if (refreshToken) {
-      await api.post('/auth/logout', { refreshToken });
-    }
-  } catch (e) {
-    // Ignore logout errors
-  }
-  clearAuth();
-};
+
 
 export const refreshAuthToken = async () => {
   const refreshToken = getRefreshToken();

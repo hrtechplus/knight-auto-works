@@ -1364,6 +1364,12 @@ app.put('/api/inventory/:id', async (req, res) => {
 
 app.delete('/api/inventory/:id', requireAdminOrAbove, async (req, res) => {
   try {
+    // Check for usage in job_parts
+    const usage = await queryOne('SELECT COUNT(*) as count FROM job_parts WHERE inventory_id = $1', [req.params.id]);
+    if (parseInt(usage.count) > 0) {
+      return res.status(400).json(createError(ErrorCodes.BUSINESS_RULE, `Cannot delete item used in ${usage.count} job(s).`));
+    }
+
     await query('DELETE FROM inventory WHERE id = $1', [req.params.id]);
     res.json({ success: true });
   } catch (error) {
@@ -1438,8 +1444,14 @@ app.put('/api/suppliers/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/suppliers/:id', async (req, res) => {
+app.delete('/api/suppliers/:id', requireRole('admin', 'super_admin'), async (req, res) => {
   try {
+    // Check for inventory items linked to this supplier
+    const items = await queryOne('SELECT COUNT(*) as count FROM inventory WHERE supplier_id = $1', [req.params.id]);
+    if (parseInt(items.count) > 0) {
+      return res.status(400).json(createError(ErrorCodes.BUSINESS_RULE, `Cannot delete supplier associated with ${items.count} inventory item(s).`));
+    }
+
     await query('DELETE FROM suppliers WHERE id = $1', [req.params.id]);
     res.json({ success: true });
   } catch (error) {
