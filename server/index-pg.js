@@ -38,6 +38,7 @@ async function init() {
 const allowedOrigins = [
   'https://knightautoworks.lk',
   'https://www.knightautoworks.lk',
+  'https://pos.knightautoworks.lk',
   'https://knight-auto-works-f128c.web.app',
   'http://localhost:5173', // Local development
   'http://localhost:3000'  // Alternative local port
