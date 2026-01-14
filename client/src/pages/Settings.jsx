@@ -198,16 +198,8 @@ function Settings() {
             </div>
             <div className="card-body">
               <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
-                <div style={{ 
-                  width: '48px', 
-                  height: '48px', 
-                  background: 'linear-gradient(135deg, var(--primary), var(--primary-dark))', 
-                  borderRadius: 'var(--radius-md)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  <SettingsIcon size={24} />
+                <div className="logo-icon">
+                  <img src="/bg-removed_logo_small.png" alt="Knight Auto Works" />
                 </div>
                 <div>
                   <div style={{ fontWeight: '600', fontSize: '1.1rem' }}>Knight Auto Works</div>
@@ -216,7 +208,6 @@ function Settings() {
               </div>
               <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
                 <p>Version 1.0.0</p>
-                <p style={{ marginTop: '0.5rem' }}>Built with React + Express + PostgreSQL</p>
               </div>
               
               {/* Developer Credits */}

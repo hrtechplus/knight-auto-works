@@ -190,7 +190,7 @@ function Dashboard() {
                   fontSize={12} 
                   tickLine={false} 
                   axisLine={false}
-                  tickFormatter={(value) => `₹${value/1000}k`}
+                  tickFormatter={(value) => `Rs.${value/1000}k`}
                 />
                 <Tooltip 
                   contentStyle={{ 

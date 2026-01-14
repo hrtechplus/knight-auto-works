@@ -139,67 +139,24 @@ function AppContent({ user, onLogout }) {
         </nav>
 
         {/* User info and logout */}
-        <div style={{
-          padding: '1rem 1.5rem',
-          borderTop: '1px solid var(--border)',
-          marginTop: 'auto'
-        }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.75rem',
-            marginBottom: '0.75rem'
-          }}>
-            <div style={{
-              width: '36px',
-              height: '36px',
-              background: 'var(--bg-tertiary)',
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}>
-              <User size={18} />
+        <div className="sidebar-footer">
+          <div className="user-profile">
+            <div className="user-avatar">
+              <User size={16} />
             </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: '500', fontSize: '0.9rem' }}>{user?.name || 'User'}</div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{user?.role || 'staff'}</div>
+            <div className="user-info">
+              <div className="user-name">{user?.name || 'User'}</div>
+              <div className="user-role">{user?.role || 'staff'}</div>
             </div>
           </div>
-          <button
-            onClick={handleLogoutClick}
-            className="btn btn-ghost"
-            style={{
-              width: '100%',
-              justifyContent: 'center',
-              color: 'var(--danger)'
-            }}
-          >
+          <button onClick={handleLogoutClick} className="btn-logout">
             <LogOut size={16} />
             Sign Out
           </button>
           
-          {/* Developer Credit */}
-          <div style={{ 
-            marginTop: '1rem', 
-            paddingTop: '0.75rem', 
-            borderTop: '1px solid var(--border)',
-            textAlign: 'center'
-          }}>
-            <a 
-              href="https://hasidu.live/" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              style={{ 
-                fontSize: '0.7rem', 
-                color: 'var(--text-muted)',
-                textDecoration: 'none',
-                transition: 'color 0.2s'
-              }}
-              onMouseEnter={(e) => e.target.style.color = 'var(--primary)'}
-              onMouseLeave={(e) => e.target.style.color = 'var(--text-muted)'}
-            >
-              Developed by <span style={{ fontWeight: '500' }}>Hasindu</span>
+          <div className="developer-credit">
+            <a href="https://hasidu.live/" target="_blank" rel="noopener noreferrer">
+              Developed by Hasindu
             </a>
           </div>
         </div>
