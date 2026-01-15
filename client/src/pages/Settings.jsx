@@ -298,10 +298,10 @@ function Settings() {
             <div className="card-body">
               <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
                 <div className="logo-icon">
-                  <img src="/bg-removed_logo_small.png" alt="Knight Auto Works" />
+                  <img src="/bg-removed_logo_small.png" alt="Knight Auto Works" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                 </div>
                 <div>
-                  <div style={{ fontWeight: '600', fontSize: '1.1rem', whiteSpace: 'nowrap' }}>Knight Auto Works</div>
+                  <div style={{ fontWeight: '600', fontSize: '1rem', whiteSpace: 'nowrap' }}>Knight Auto Works</div>
                   <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Workshop Management System</div>
                 </div>
               </div>

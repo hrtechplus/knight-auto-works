@@ -88,7 +88,7 @@ function AppContent({ user, onLogout }) {
               <img 
                 src="/bg-removed_logo_small.png" 
                 alt="Knight Auto" 
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
               />
             </div>
               <div className="logo-text" style={{ whiteSpace: 'nowrap' }}>Knight Auto Works</div>
