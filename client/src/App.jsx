@@ -91,10 +91,7 @@ function AppContent({ user, onLogout }) {
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />
             </div>
-            <div>
-              <div className="logo-text">Knight Auto</div>
-              <div className="logo-subtext">Works</div>
-            </div>
+              <div className="logo-text" style={{ whiteSpace: 'nowrap' }}>Knight Auto Works</div>
           </div>
         </div>
         

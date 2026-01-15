@@ -228,7 +228,7 @@ export const updateUser = (id, data) => api.put(`/users/${id}`, data);
 // ============================================
 
 export const getHealth = () => api.get('/health');
-export const triggerBackup = () => api.post('/backup');
+export const triggerBackup = () => api.post('/backup', {}, { responseType: 'blob' });
 export const getAuditLog = (params = {}) => {
   const query = new URLSearchParams(params).toString();
   return api.get(`/audit-log${query ? `?${query}` : ''}`);

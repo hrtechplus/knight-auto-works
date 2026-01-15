@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Save, Settings as SettingsIcon } from 'lucide-react';
+import { Save, Settings as SettingsIcon, Shield } from 'lucide-react';
+import ConfirmDialog from '../components/ConfirmDialog';
+import { ToastContainer, useToast } from '../components/Toast';
 import { getSettings, updateSettings } from '../api';
 
 function Settings() {
@@ -7,6 +9,7 @@ function Settings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const { toasts, addToast, removeToast } = useToast();
 
   useEffect(() => {
     loadSettings();
@@ -37,37 +40,52 @@ function Settings() {
   };
 
   const [backupLoading, setBackupLoading] = useState(false);
+  const [showBackupConfirm, setShowBackupConfirm] = useState(false);
 
   if (loading) {
     return <div className="loading"><div className="spinner"></div></div>;
   }
 
-  const handleBackup = async () => {
-    if (!confirm('Download a full backup of the system data?')) return;
+  const handleBackupClick = () => {
+    setShowBackupConfirm(true);
+  };
+
+  const proceedWithBackup = async () => {
+    setShowBackupConfirm(false);
     setBackupLoading(true);
     try {
       const { triggerBackup } = await import('../api');
       const res = await triggerBackup();
       
-      // Handle the file download
-      if (res.data.data) {
-        const dataStr = JSON.stringify(res.data.data, null, 2);
-        const blob = new Blob([dataStr], { type: 'application/json' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = res.data.filename || 'backup.json';
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-        alert('Backup downloaded successfully!');
-      } else {
-        alert(res.data.message || 'Backup created (Server Side)');
+      // Blob Download Logic (Server returns binary Excel file)
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      
+      // Extract filename from header or default
+      const contentDisposition = res.headers['content-disposition'];
+      let fileName = 'KAW_Backup.xlsx';
+      if (contentDisposition) {
+        const fileNameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+        if (fileNameMatch && fileNameMatch.length === 2) fileName = fileNameMatch[1];
       }
+      
+      link.setAttribute('download', fileName);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      
+      // Update local state to show new date immediately
+      setSettings(prev => ({
+        ...prev,
+        last_backup_at: new Date().toISOString()
+      }));
+
+      addToast('Excel backup downloaded successfully!', 'success');
     } catch (error) {
       console.error(error);
-      alert('Failed to generate backup: ' + (error.response?.data?.error?.message || error.message));
+      addToast('Failed to generate backup: ' + (error.response?.data?.error?.message || error.message), 'error');
     } finally {
       setBackupLoading(false);
     }
@@ -75,6 +93,7 @@ function Settings() {
 
   return (
     <>
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
       <header className="main-header">
         <h1 className="page-title">Settings</h1>
         <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
@@ -232,13 +251,37 @@ function Settings() {
               <h3 className="card-title">System Data</h3>
             </div>
             <div className="card-body">
-              <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-                Download a complete copy of your business data (Customers, Jobs, Invoices, Inventory).
-                Keep this file safe.
-              </p>
+              {(!settings.last_backup_at || (new Date() - new Date(settings.last_backup_at)) / (1000 * 60 * 60 * 24) > 7) && (
+                <div style={{ 
+                  background: 'rgba(234, 179, 8, 0.1)', 
+                  color: 'var(--warning)', 
+                  padding: '0.75rem', 
+                  borderRadius: 'var(--radius-sm)',
+                  marginBottom: '1rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  fontSize: '0.9rem'
+                }}>
+                  <Shield size={16} />
+                  <span>Warning: No recent backup found. Please download a backup.</span>
+                </div>
+              )}
+              
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <p style={{ color: 'var(--text-secondary)', margin: 0 }}>
+                  Download a complete copy of your business data (Excel format).
+                </p>
+                {settings.last_backup_at && (
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                    Last Backup: {new Date(settings.last_backup_at).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
+
               <button 
                 className="btn btn-secondary" 
-                onClick={handleBackup} 
+                onClick={handleBackupClick} 
                 disabled={backupLoading}
                 style={{ width: '100%', justifyContent: 'center' }}
               >
@@ -258,7 +301,7 @@ function Settings() {
                   <img src="/bg-removed_logo_small.png" alt="Knight Auto Works" />
                 </div>
                 <div>
-                  <div style={{ fontWeight: '600', fontSize: '1.1rem' }}>Knight Auto Works</div>
+                  <div style={{ fontWeight: '600', fontSize: '1.1rem', whiteSpace: 'nowrap' }}>Knight Auto Works</div>
                   <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Workshop Management System</div>
                 </div>
               </div>
@@ -325,6 +368,15 @@ function Settings() {
           </div>
         </div>
       </div>
+      <ConfirmDialog
+        isOpen={showBackupConfirm}
+        onClose={() => setShowBackupConfirm(false)}
+        onConfirm={proceedWithBackup}
+        title="Download Data Backup"
+        message="This will generate a complete Excel backup of your Customers, Jobs, Invoices, and Inventory. This process might take a few seconds."
+        confirmText="Download Backup"
+        confirmColor="primary"
+      />
     </>
   );
 }

@@ -2358,33 +2358,73 @@ app.put('/api/service-reminders/:id', async (req, res) => {
 // SYSTEM & HEALTH ROUTES
 // ============================================
 
-app.post('/api/backup', requireRole('admin'), async (req, res) => {
+app.post('/api/backup', requireAdminOrAbove, async (req, res) => {
   try {
+    const XLSX = await import('xlsx');
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    
-    const backupData = {
-      timestamp: new Date().toISOString(),
-      version: '2.0.0-pg',
-      data: {}
-    };
-
     const tables = ['customers', 'vehicles', 'jobs', 'job_items', 'job_parts', 'inventory', 'suppliers', 'invoices', 'payments', 'expenses', 'service_reminders', 'settings', 'users'];
     
+    // Create a new workbook
+    const wb = XLSX.utils.book_new();
+
     await transaction(async (client) => {
       for (const table of tables) {
         const result = await client.query(`SELECT * FROM ${table}`);
-        backupData.data[table] = result.rows;
+        const data = result.rows;
+        
+        if (data.length > 0) {
+           // Format sensitive/complex types for clear Excel display
+           const formattedData = data.map(row => {
+             const newRow = { ...row };
+             Object.keys(newRow).forEach(key => {
+               const val = newRow[key];
+               // Handle Dates
+               if (val instanceof Date) {
+                 newRow[key] = val.toISOString().replace('T', ' ').substring(0, 19);
+               }
+               // Handle Objects/Arrays (prevent [object Object])
+               else if (typeof val === 'object' && val !== null) {
+                 newRow[key] = JSON.stringify(val);
+               }
+               // Handle Booleans
+               else if (typeof val === 'boolean') {
+                 newRow[key] = val ? 'Yes' : 'No';
+               }
+             });
+             return newRow;
+           });
+
+           // Sheet name max 31 chars
+           const sheetName = (table.charAt(0).toUpperCase() + table.slice(1)).substring(0, 31);
+           const ws = XLSX.utils.json_to_sheet(formattedData);
+           
+           // Auto-width columns roughly
+           const colWidths = Object.keys(formattedData[0]).map(key => ({ wch: 20 }));
+           ws['!cols'] = colWidths;
+           
+           XLSX.utils.book_append_sheet(wb, ws, sheetName);
+        }
       }
-    });
-    
-    res.json({
-      success: true,
-      message: 'Backup generated successfully',
-      filename: `knight-auto-backup-${timestamp}.json`,
-      data: backupData
+      
+      // Update last backup timestamp
+      await client.query(
+        `INSERT INTO settings (key, value) VALUES ('last_backup_at', $1) 
+         ON CONFLICT (key) DO UPDATE SET value = $1`,
+        [timestamp]
+      );
     });
 
+    // Generate buffer
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const filename = `KAW_Backup_${timestamp}.xlsx`;
+
+    // Send headers and binary data
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+    res.send(buffer);
+
   } catch (error) {
+    console.error('Backup Error:', error);
     res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
   }
 });
