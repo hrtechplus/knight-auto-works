@@ -36,9 +36,42 @@ function Settings() {
     }
   };
 
+  const [backupLoading, setBackupLoading] = useState(false);
+
   if (loading) {
     return <div className="loading"><div className="spinner"></div></div>;
   }
+
+  const handleBackup = async () => {
+    if (!confirm('Download a full backup of the system data?')) return;
+    setBackupLoading(true);
+    try {
+      const { triggerBackup } = await import('../api');
+      const res = await triggerBackup();
+      
+      // Handle the file download
+      if (res.data.data) {
+        const dataStr = JSON.stringify(res.data.data, null, 2);
+        const blob = new Blob([dataStr], { type: 'application/json' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = res.data.filename || 'backup.json';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        alert('Backup downloaded successfully!');
+      } else {
+        alert(res.data.message || 'Backup created (Server Side)');
+      }
+    } catch (error) {
+      console.error(error);
+      alert('Failed to generate backup: ' + (error.response?.data?.error?.message || error.message));
+    } finally {
+      setBackupLoading(false);
+    }
+  };
 
   return (
     <>
@@ -188,6 +221,29 @@ function Settings() {
                   </small>
                 </div>
               </div>
+            </div>
+          </div>
+
+
+
+          {/* System Backup */}
+          <div className="card">
+            <div className="card-header">
+              <h3 className="card-title">System Data</h3>
+            </div>
+            <div className="card-body">
+              <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+                Download a complete copy of your business data (Customers, Jobs, Invoices, Inventory).
+                Keep this file safe.
+              </p>
+              <button 
+                className="btn btn-secondary" 
+                onClick={handleBackup} 
+                disabled={backupLoading}
+                style={{ width: '100%', justifyContent: 'center' }}
+              >
+                {backupLoading ? 'Generating Backup...' : 'Download Data Backup'}
+              </button>
             </div>
           </div>
 

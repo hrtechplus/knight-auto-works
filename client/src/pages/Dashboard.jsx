@@ -59,7 +59,10 @@ function Dashboard() {
     );
   }
 
-  const { stats, recentJobs, recentPayments } = data || {};
+  const { stats, recentJobs, recentPayments, revenueTrend } = data || {};
+  
+  // Use real data if available, otherwise show empty state (not mock)
+  const chartData = revenueTrend || [];
 
   return (
     <>
@@ -170,7 +173,7 @@ function Dashboard() {
           </div>
           <div className="card-body" style={{ height: '300px' }}>
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={revenueData}>
+              <AreaChart data={chartData}>
                 <defs>
                   <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.3}/>

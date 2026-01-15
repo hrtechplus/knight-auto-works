@@ -2176,29 +2176,36 @@ app.delete('/api/expenses/:id', requireAdminOrAbove, async (req, res) => {
 
 app.get('/api/reports/revenue', requireAdminOrAbove, async (req, res) => {
   try {
-    const { start_date, end_date } = req.query;
-    const start = start_date || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
-    const end = end_date || new Date().toISOString().split('T')[0];
+    const { period } = req.query; // daily, weekly, monthly
+    let dateTrunc, dateFormat;
     
-    const [revenue, expenses, dailyRevenue] = await Promise.all([
-      queryOne('SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE DATE(created_at) BETWEEN $1 AND $2', [start, end]),
-      queryOne('SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE expense_date BETWEEN $1 AND $2', [start, end]),
-      queryAll(`
-        SELECT DATE(created_at) as date, SUM(amount) as total
-        FROM payments WHERE DATE(created_at) BETWEEN $1 AND $2
-        GROUP BY DATE(created_at) ORDER BY date
-      `, [start, end])
-    ]);
+    switch (period) {
+      case 'daily':
+        dateTrunc = "DATE(created_at)";
+        dateFormat = "TO_CHAR(created_at, 'YYYY-MM-DD')";
+        break;
+      case 'weekly':
+        dateTrunc = "DATE_TRUNC('week', created_at)";
+        dateFormat = "TO_CHAR(created_at, 'YYYY-\"W\"IW')";
+        break;
+      default: // monthly
+        dateTrunc = "DATE_TRUNC('month', created_at)";
+        dateFormat = "TO_CHAR(created_at, 'YYYY-MM')";
+    }
     
-    res.json({
-      period: { start, end },
-      revenue: parseFloat(revenue.total),
-      expenses: parseFloat(expenses.total),
-      profit: parseFloat(revenue.total) - parseFloat(expenses.total),
-      daily: dailyRevenue
-    });
+    // Postgres query to match SQLite structure
+    const revenue = await queryAll(`
+      SELECT ${dateFormat} as period, COALESCE(SUM(amount), 0) as total
+      FROM payments
+      GROUP BY ${dateTrunc}, ${dateFormat}
+      ORDER BY ${dateTrunc} DESC
+      LIMIT 12
+    `);
+    
+    // Front end expects ascending order (oldest to newest) for chart
+    res.json(revenue.reverse());
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
   }
 });
 
@@ -2344,6 +2351,41 @@ app.put('/api/service-reminders/:id', async (req, res) => {
     res.json({ id: req.params.id, ...req.body });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================
+// SYSTEM & HEALTH ROUTES
+// ============================================
+
+app.post('/api/backup', requireRole('admin'), async (req, res) => {
+  try {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    
+    const backupData = {
+      timestamp: new Date().toISOString(),
+      version: '2.0.0-pg',
+      data: {}
+    };
+
+    const tables = ['customers', 'vehicles', 'jobs', 'job_items', 'job_parts', 'inventory', 'suppliers', 'invoices', 'payments', 'expenses', 'service_reminders', 'settings', 'users'];
+    
+    await transaction(async (client) => {
+      for (const table of tables) {
+        const result = await client.query(`SELECT * FROM ${table}`);
+        backupData.data[table] = result.rows;
+      }
+    });
+    
+    res.json({
+      success: true,
+      message: 'Backup generated successfully',
+      filename: `knight-auto-backup-${timestamp}.json`,
+      data: backupData
+    });
+
+  } catch (error) {
+    res.status(500).json(createError(ErrorCodes.INTERNAL_ERROR, error.message));
   }
 });
 
